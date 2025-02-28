@@ -196,4 +196,11 @@ public class RestControllerParser extends AbstractEndpointParser<ApiCall> {
 
         return Map.of("type", returnType.asString());
     }
+
+    @Override
+    protected ApiCall parseClass(ClassOrInterfaceDeclaration classDeclaration) {
+        String basePath = getBasePath(classDeclaration);
+        List<ApiCall> apiCalls = parseApiCalls(classDeclaration, basePath);
+        return apiCalls.isEmpty() ? null : apiCalls.get(0);
+    }
 } 
