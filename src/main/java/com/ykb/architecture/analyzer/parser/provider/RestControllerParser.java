@@ -1,25 +1,21 @@
 package com.ykb.architecture.analyzer.parser.provider;
 
+import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.NodeList;
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.type.Type;
-import com.ykb.architecture.analyzer.core.model.endpoint.ProvidedEndpoint;
-import com.ykb.architecture.analyzer.core.model.method.EndpointMethod;
+import com.ykb.architecture.analyzer.core.model.method.ApiCall;
 import com.ykb.architecture.analyzer.parser.base.AbstractEndpointParser;
 import com.ykb.architecture.analyzer.parser.util.AnnotationParser;
 import com.ykb.architecture.analyzer.parser.util.PathResolver;
 import com.ykb.architecture.analyzer.parser.util.TypeResolver;
 import lombok.extern.slf4j.Slf4j;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 
 @Slf4j
-public class RestControllerParser extends AbstractEndpointParser<ProvidedEndpoint> {
+public class RestControllerParser extends AbstractEndpointParser<ApiCall> {
 
     private static final String REST_CONTROLLER = "RestController";
     private static final String CONTROLLER = "Controller";
@@ -37,6 +33,28 @@ public class RestControllerParser extends AbstractEndpointParser<ProvidedEndpoin
     }
 
     @Override
+    public List<ApiCall> parse(CompilationUnit compilationUnit) {
+        List<ApiCall> endpoints = new ArrayList<>();
+        
+        try {
+            compilationUnit.findAll(ClassOrInterfaceDeclaration.class).stream()
+                    .filter(this::shouldParse)
+                    .forEach(classDeclaration -> {
+                        String basePath = getBasePath(classDeclaration);
+                        List<ApiCall> apiCalls = parseApiCalls(classDeclaration, basePath);
+                        log.debug("Found {} endpoints in controller {}", 
+                            apiCalls.size(), classDeclaration.getNameAsString());
+                        endpoints.addAll(apiCalls);
+                    });
+        } catch (Exception e) {
+            log.error("Error parsing file: {}", 
+                compilationUnit.getStorage().map(s -> s.getPath().toString()).orElse("unknown"), e);
+        }
+        
+        return endpoints;
+    }
+
+    @Override
     protected boolean shouldParse(ClassOrInterfaceDeclaration classDeclaration) {
         return AnnotationParser.hasAnnotation(classDeclaration, REST_CONTROLLER) ||
                (AnnotationParser.hasAnnotation(classDeclaration, CONTROLLER) && 
@@ -44,51 +62,42 @@ public class RestControllerParser extends AbstractEndpointParser<ProvidedEndpoin
                     AnnotationParser.hasAnnotation(m, "ResponseBody")));
     }
 
-    @Override
-    protected ProvidedEndpoint parseClass(ClassOrInterfaceDeclaration classDeclaration) {
-        String className = getClassName(classDeclaration);
-        String basePath = getBasePath(classDeclaration);
-        List<EndpointMethod> methods = parseEndpointMethods(classDeclaration, basePath);
-
-        return ProvidedEndpoint.builder()
-                .className(className)
-                .basePath(basePath)
-                .methods(methods)
-                .build();
-    }
-
     private String getBasePath(ClassOrInterfaceDeclaration classDeclaration) {
-        log.debug("Getting base path for class: {}", classDeclaration.getNameAsString());
-        
-        // First try @RequestMapping
-        Optional<String> requestMapping = AnnotationParser.getAnnotationValue(classDeclaration, REQUEST_MAPPING, "value");
-        log.debug("@RequestMapping value result: {}", requestMapping);
-        
-        if (!requestMapping.isPresent()) {
-            requestMapping = AnnotationParser.getAnnotationSingleValue(classDeclaration, REQUEST_MAPPING);
-            log.debug("@RequestMapping single value result: {}", requestMapping);
-        }
-        
-        String result = requestMapping.orElse("");
-        log.debug("Final base path: {}", result);
-        return result;
+        return AnnotationParser.getAnnotationValue(classDeclaration, REQUEST_MAPPING, "value")
+                .or(() -> AnnotationParser.getAnnotationValue(classDeclaration, REQUEST_MAPPING, "path"))
+                .or(() -> AnnotationParser.getAnnotationSingleValue(classDeclaration, REQUEST_MAPPING))
+                .orElse("");
     }
 
-    private List<EndpointMethod> parseEndpointMethods(ClassOrInterfaceDeclaration classDeclaration, String basePath) {
-        List<EndpointMethod> methods = new ArrayList<>();
+    private List<ApiCall> parseApiCalls(ClassOrInterfaceDeclaration classDeclaration, String basePath) {
+        List<ApiCall> apiCalls = new ArrayList<>();
         
         for (MethodDeclaration method : classDeclaration.getMethods()) {
             if (isEndpointMethod(method)) {
                 try {
-                    EndpointMethod endpointMethod = parseMethod(method, basePath);
-                    methods.add(endpointMethod);
+                    ApiCall apiCall = parseApiCall(method, basePath);
+                    apiCalls.add(apiCall);
                 } catch (Exception e) {
-                    log.error("Error parsing method {}.{}", classDeclaration.getNameAsString(), method.getNameAsString(), e);
+                    log.error("Error parsing method in {}", classDeclaration.getNameAsString(), e);
                 }
             }
         }
         
-        return methods;
+        return apiCalls;
+    }
+
+    private ApiCall parseApiCall(MethodDeclaration method, String basePath) {
+        String methodPath = getMethodPath(method);
+        String fullPath = PathResolver.combinePaths(basePath, methodPath);
+
+        return ApiCall.builder()
+                .httpMethod(determineHttpMethod(method))
+                .fullPath(fullPath)
+                .pathVariables(parsePathVariables(method))
+                .queryParameters(parseQueryParameters(method))
+                .requestBody(parseRequestBody(method))
+                .responseBody(parseResponseBody(method))
+                .build();
     }
 
     private boolean isEndpointMethod(MethodDeclaration method) {
@@ -102,23 +111,6 @@ public class RestControllerParser extends AbstractEndpointParser<ProvidedEndpoin
                            name.equals(DELETE_MAPPING) ||
                            name.equals(PATCH_MAPPING);
                 });
-    }
-
-    private EndpointMethod parseMethod(MethodDeclaration method, String basePath) {
-        String methodPath = getMethodPath(method);
-        String fullPath = PathResolver.combinePaths(basePath, methodPath);
-        String httpMethod = determineHttpMethod(method);
-
-        return EndpointMethod.builder()
-                .methodName(method.getNameAsString())
-                .httpMethod(httpMethod)
-                .path(methodPath)
-                .fullPath(fullPath)
-                .pathVariables(parsePathVariables(method))
-                .queryParameters(parseQueryParameters(method))
-                .requestBody(parseRequestBody(method))
-                .responseBody(parseResponseBody(method))
-                .build();
     }
 
     private String getMethodPath(MethodDeclaration method) {

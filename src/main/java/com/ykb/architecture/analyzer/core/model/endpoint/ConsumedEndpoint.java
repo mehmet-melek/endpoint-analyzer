@@ -1,12 +1,13 @@
 package com.ykb.architecture.analyzer.core.model.endpoint;
 
+import com.ykb.architecture.analyzer.core.model.method.ApiCall;
+import lombok.Builder;
 import lombok.Data;
-import lombok.EqualsAndHashCode;
-import lombok.experimental.SuperBuilder;
+import java.util.List;
 
 @Data
-@EqualsAndHashCode(callSuper = true)
-@SuperBuilder
-public class ConsumedEndpoint extends BaseEndpoint {
+@Builder
+public class ConsumedEndpoint {
     private String clientName;
+    private List<ApiCall> apiCalls;
 } 

@@ -1,11 +1,12 @@
 package com.ykb.architecture.analyzer.parser.consumer;
 
+import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.NodeList;
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.type.Type;
 import com.ykb.architecture.analyzer.core.model.endpoint.ConsumedEndpoint;
-import com.ykb.architecture.analyzer.core.model.method.EndpointMethod;
+import com.ykb.architecture.analyzer.core.model.method.ApiCall;
 import com.ykb.architecture.analyzer.parser.base.AbstractEndpointParser;
 import com.ykb.architecture.analyzer.parser.util.AnnotationParser;
 import com.ykb.architecture.analyzer.parser.util.PathResolver;
@@ -39,26 +40,23 @@ public class FeignClientParser extends AbstractEndpointParser<ConsumedEndpoint> 
 
     @Override
     protected ConsumedEndpoint parseClass(ClassOrInterfaceDeclaration classDeclaration) {
-        String className = getClassName(classDeclaration);
         String clientName = getClientName(classDeclaration);
         String basePath = getBasePath(classDeclaration);
-        List<EndpointMethod> methods = parseEndpointMethods(classDeclaration, basePath);
+        List<ApiCall> apiCalls = parseApiCalls(classDeclaration, basePath);
 
         return ConsumedEndpoint.builder()
-                .className(className)
                 .clientName(clientName)
-                .basePath(basePath)
-                .methods(methods)
+                .apiCalls(apiCalls)
                 .build();
     }
 
     private String getClientName(ClassOrInterfaceDeclaration classDeclaration) {
         // First try to get 'name' or 'value' attribute
-        Optional<String> clientName = AnnotationParser.getAnnotationValue(classDeclaration, FEIGN_CLIENT, "name")
+        Optional<String> appName = AnnotationParser.getAnnotationValue(classDeclaration, FEIGN_CLIENT, "name")
                 .or(() -> AnnotationParser.getAnnotationValue(classDeclaration, FEIGN_CLIENT, "value"));
         
-        if (clientName.isPresent()) {
-            return clientName.get();
+        if (appName.isPresent()) {
+            return appName.get();
         }
 
         // If no name/value, try to get 'url' attribute
@@ -67,45 +65,60 @@ public class FeignClientParser extends AbstractEndpointParser<ConsumedEndpoint> 
             return url.get();
         }
 
-        // If no url, try to get single value (direct string value)
+        // If no url, try to get single value
         Optional<String> singleValue = AnnotationParser.getAnnotationSingleValue(classDeclaration, FEIGN_CLIENT);
         if (singleValue.isPresent()) {
             return singleValue.get();
         }
 
-        // If nothing found, return unknown client
         log.warn("No name, value, url or direct value found for FeignClient: {}", classDeclaration.getNameAsString());
-        return "unknown-client";
+        return "unknown-application";
     }
 
     private String getBasePath(ClassOrInterfaceDeclaration classDeclaration) {
         // First try path from @FeignClient
-        Optional<String> feignPath = AnnotationParser.getAnnotationValue(classDeclaration, FEIGN_CLIENT, "path");
-        if (feignPath.isPresent()) {
-            return feignPath.get();
-        }
+        String feignPath = AnnotationParser.getAnnotationValue(classDeclaration, FEIGN_CLIENT, "path")
+                .orElse("");
 
         // Then try @RequestMapping
-        return AnnotationParser.getAnnotationValue(classDeclaration, REQUEST_MAPPING, "value")
+        String requestPath = AnnotationParser.getAnnotationValue(classDeclaration, REQUEST_MAPPING, "value")
+                .or(() -> AnnotationParser.getAnnotationValue(classDeclaration, REQUEST_MAPPING, "path"))
                 .or(() -> AnnotationParser.getAnnotationSingleValue(classDeclaration, REQUEST_MAPPING))
                 .orElse("");
+
+        // Combine both paths
+        return PathResolver.combinePaths(feignPath, requestPath);
     }
 
-    private List<EndpointMethod> parseEndpointMethods(ClassOrInterfaceDeclaration classDeclaration, String basePath) {
-        List<EndpointMethod> methods = new ArrayList<>();
+    private List<ApiCall> parseApiCalls(ClassOrInterfaceDeclaration classDeclaration, String basePath) {
+        List<ApiCall> apiCalls = new ArrayList<>();
         
         for (MethodDeclaration method : classDeclaration.getMethods()) {
             if (isEndpointMethod(method)) {
                 try {
-                    EndpointMethod endpointMethod = parseMethod(method, basePath);
-                    methods.add(endpointMethod);
+                    ApiCall apiCall = parseApiCall(method, basePath);
+                    apiCalls.add(apiCall);
                 } catch (Exception e) {
-                    log.error("Error parsing method {}.{}", classDeclaration.getNameAsString(), method.getNameAsString(), e);
+                    log.error("Error parsing method in {}", classDeclaration.getNameAsString(), e);
                 }
             }
         }
         
-        return methods;
+        return apiCalls;
+    }
+
+    private ApiCall parseApiCall(MethodDeclaration method, String basePath) {
+        String methodPath = getMethodPath(method);
+        String fullPath = PathResolver.combinePaths(basePath, methodPath);
+
+        return ApiCall.builder()
+                .httpMethod(determineHttpMethod(method))
+                .fullPath(fullPath)
+                .pathVariables(parsePathVariables(method))
+                .queryParameters(parseQueryParameters(method))
+                .requestBody(parseRequestBody(method))
+                .responseBody(parseResponseBody(method))
+                .build();
     }
 
     private boolean isEndpointMethod(MethodDeclaration method) {
@@ -119,23 +132,6 @@ public class FeignClientParser extends AbstractEndpointParser<ConsumedEndpoint> 
                            name.equals(DELETE_MAPPING) ||
                            name.equals(PATCH_MAPPING);
                 });
-    }
-
-    private EndpointMethod parseMethod(MethodDeclaration method, String basePath) {
-        String methodPath = getMethodPath(method);
-        String fullPath = PathResolver.combinePaths(basePath, methodPath);
-        String httpMethod = determineHttpMethod(method);
-
-        return EndpointMethod.builder()
-                .methodName(method.getNameAsString())
-                .httpMethod(httpMethod)
-                .path(methodPath)
-                .fullPath(fullPath)
-                .pathVariables(parsePathVariables(method))
-                .queryParameters(parseQueryParameters(method))
-                .requestBody(parseRequestBody(method))
-                .responseBody(parseResponseBody(method))
-                .build();
     }
 
     private String getMethodPath(MethodDeclaration method) {
@@ -219,5 +215,26 @@ public class FeignClientParser extends AbstractEndpointParser<ConsumedEndpoint> 
         }
 
         return Map.of("type", returnType.asString());
+    }
+
+    @Override
+    public List<ConsumedEndpoint> parse(CompilationUnit compilationUnit) {
+        List<ConsumedEndpoint> endpoints = new ArrayList<>();
+        
+        try {
+            compilationUnit.findAll(ClassOrInterfaceDeclaration.class).stream()
+                    .filter(this::shouldParse)
+                    .map(this::parseClass)
+                    .forEach(endpoint -> {
+                        log.debug("Found FeignClient: {} with {} API calls", 
+                            endpoint.getClientName(), endpoint.getApiCalls().size());
+                        endpoints.add(endpoint);
+                    });
+        } catch (Exception e) {
+            log.error("Error parsing file: {}", 
+                compilationUnit.getStorage().map(s -> s.getPath().toString()).orElse("unknown"), e);
+        }
+        
+        return endpoints;
     }
 } 

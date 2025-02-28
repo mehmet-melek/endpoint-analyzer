@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Set root log level to INFO -->
+    <root level="INFO">
+        <appender-ref ref="CONSOLE" />
+    </root>
+
+    <!-- Set specific package to ERROR -->
+    <logger name="com.github.javaparser" level="ERROR" />
+    
+    <!-- Our application packages -->
+    <logger name="com.ykb.architecture.analyzer" level="INFO" />
+</configuration> 
