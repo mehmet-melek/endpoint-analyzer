@@ -240,7 +240,7 @@ public class TypeResolver {
     private Map<String, Object> extractFields(ClassOrInterfaceDeclaration classDeclaration) {
         String className = classDeclaration.getNameAsString();
         if (processedTypes.contains(className)) {
-            return Map.of("type", normalizeType(className)); // Prevent infinite recursion
+            return Map.of("type", normalizeType(className));
         }
         processedTypes.add(className);
 
@@ -254,12 +254,16 @@ public class TypeResolver {
                 ResolvedType resolvedType = fieldType.resolve();
                 String qualifiedName = resolvedType.describe();
 
-                if (isCollectionType(qualifiedName)) {
+                boolean isJpaRelation = field.getAnnotations().stream()
+                    .anyMatch(a -> a.getNameAsString().matches("OneToMany|ManyToOne|OneToOne|ManyToMany"));
+
+                if (isJpaRelation) {
+                    fields.put(fieldName, Map.of("type", "relation"));
+                } else if (isCollectionType(qualifiedName)) {
                     fields.put(fieldName, resolveCollectionType(fieldType));
                 } else if (isJavaType(qualifiedName)) {
                     fields.put(fieldName, normalizeType(resolvedType.describe()));
                 } else {
-                    // Recursively resolve nested DTOs
                     fields.put(fieldName, resolveFields(fieldType));
                 }
             } catch (Exception e) {
