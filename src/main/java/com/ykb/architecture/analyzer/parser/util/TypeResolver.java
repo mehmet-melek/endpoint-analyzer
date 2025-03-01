@@ -257,15 +257,53 @@ public class TypeResolver {
         Map<String, Object> fields = new HashMap<>();
         
         for (FieldDeclaration field : classDeclaration.getFields()) {
-            String fieldName = field.getVariable(0).getNameAsString();
+            // Skip fields with @JsonIgnore annotation
+            boolean isJsonIgnored = field.getAnnotations().stream()
+                .anyMatch(a -> {
+                    String name = a.getNameAsString();
+                    return name.equals("JsonIgnore") || name.equals("com.fasterxml.jackson.annotation.JsonIgnore");
+                });
+            
+            if (isJsonIgnored) {
+                continue;  // Skip this field
+            }
+
+            // Get field name, checking @JsonProperty first
+            String fieldName = field.getAnnotations().stream()
+                .filter(a -> {
+                    String name = a.getNameAsString();
+                    return name.equals("JsonProperty") || name.equals("com.fasterxml.jackson.annotation.JsonProperty");
+                })
+                .findFirst()
+                .map(annotation -> {
+                    Optional<String> value = AnnotationParser.getAnnotationValue(annotation, "value");
+                    if (value.isPresent()) {
+                        return value.get();
+                    }
+                    return AnnotationParser.getAnnotationSingleValue(annotation)
+                            .orElse(field.getVariable(0).getNameAsString());
+                })
+                .orElse(field.getVariable(0).getNameAsString());
+
             Type fieldType = field.getVariable(0).getType();
             
             try {
                 ResolvedType resolvedType = fieldType.resolve();
                 String qualifiedName = resolvedType.describe();
 
+                // Check for JPA relations
                 boolean isJpaRelation = field.getAnnotations().stream()
                     .anyMatch(a -> a.getNameAsString().matches("OneToMany|ManyToOne|OneToOne|ManyToMany"));
+
+                // Check for transient fields
+                boolean isTransient = field.getAnnotations().stream()
+                    .anyMatch(a -> a.getNameAsString().equals("Transient") || 
+                                 a.getNameAsString().equals("javax.persistence.Transient") ||
+                                 a.getNameAsString().equals("jakarta.persistence.Transient"));
+
+                if (isTransient) {
+                    continue;  // Skip transient fields
+                }
 
                 if (isJpaRelation) {
                     fields.put(fieldName, "relation");
