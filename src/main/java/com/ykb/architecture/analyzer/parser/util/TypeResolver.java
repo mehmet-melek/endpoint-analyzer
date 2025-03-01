@@ -13,6 +13,7 @@ import com.github.javaparser.symbolsolver.resolution.typesolvers.CombinedTypeSol
 import com.github.javaparser.symbolsolver.resolution.typesolvers.JavaParserTypeSolver;
 import com.github.javaparser.symbolsolver.resolution.typesolvers.ReflectionTypeSolver;
 import lombok.extern.slf4j.Slf4j;
+import com.github.javaparser.ParserConfiguration;
 
 import java.io.File;
 import java.util.*;
@@ -40,6 +41,10 @@ public class TypeResolver {
     public TypeResolver(String sourceRoot) {
         this.sourceRoot = sourceRoot;
         
+        // Set language level to Java 17 (or your target version)
+        ParserConfiguration config = new ParserConfiguration();
+        config.setLanguageLevel(ParserConfiguration.LanguageLevel.JAVA_17);
+        
         // Create type solvers
         CombinedTypeSolver combinedSolver = new CombinedTypeSolver();
         combinedSolver.add(new ReflectionTypeSolver(false));
@@ -47,9 +52,9 @@ public class TypeResolver {
         // Add source root and all its subdirectories
         addSourceDirectories(combinedSolver, new File(sourceRoot));
         
-        // Create and configure symbol solver
+        // Create and configure symbol solver with the new configuration
         this.symbolSolver = new JavaSymbolSolver(combinedSolver);
-        StaticJavaParser.getConfiguration().setSymbolResolver(symbolSolver);
+        StaticJavaParser.setConfiguration(config.setSymbolResolver(symbolSolver));
     }
 
     private void addSourceDirectories(CombinedTypeSolver solver, File directory) {
