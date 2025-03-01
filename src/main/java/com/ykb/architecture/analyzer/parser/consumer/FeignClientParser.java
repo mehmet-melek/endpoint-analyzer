@@ -165,7 +165,7 @@ public class FeignClientParser extends AbstractEndpointParser<ConsumedEndpoint> 
                             .orElse(p.getNameAsString());
                     pathVariables.put(name, p.getTypeAsString());
                 });
-        return pathVariables;
+        return pathVariables.isEmpty() ? null : pathVariables;
     }
 
     private Map<String, Object> parseQueryParameters(MethodDeclaration method) {
@@ -177,19 +177,21 @@ public class FeignClientParser extends AbstractEndpointParser<ConsumedEndpoint> 
                             .orElse(p.getNameAsString());
                     queryParams.put(name, p.getTypeAsString());
                 });
-        return queryParams;
+        return queryParams.isEmpty() ? null : queryParams;
     }
 
     private Map<String, Object> parseRequestBody(MethodDeclaration method) {
-        return method.getParameters().stream()
+        Map<String, Object> result = method.getParameters().stream()
                 .filter(p -> AnnotationParser.hasAnnotation(p, "RequestBody"))
                 .findFirst()
                 .map(p -> typeResolver.resolveFields(p.getType()))
                 .orElse(null);
+        return result == null || result.isEmpty() ? null : result;
     }
 
     private Map<String, Object> parseResponseBody(MethodDeclaration method) {
         Type returnType = method.getType();
+        
         if (returnType.isVoidType()) {
             return null;
         }
@@ -197,24 +199,45 @@ public class FeignClientParser extends AbstractEndpointParser<ConsumedEndpoint> 
         // Handle ResponseEntity
         if (returnType.asString().startsWith("ResponseEntity")) {
             try {
+                if (returnType.asString().contains("ResponseEntity<Void>") || 
+                    returnType.asString().contains("ResponseEntity<java.lang.Void>")) {
+                    return null;
+                }
+
                 Type genericType = returnType.asClassOrInterfaceType()
                         .getTypeArguments()
                         .orElse(new NodeList<>())
                         .stream()
                         .findFirst()
                         .orElse(returnType);
-                return typeResolver.resolveFields(genericType);
+
+                if (genericType.isVoidType() || 
+                    genericType.asString().equals("Void") || 
+                    genericType.asString().equals("java.lang.Void")) {
+                    return null;
+                }
+
+                Map<String, Object> fields = typeResolver.resolveFields(genericType);
+                return fields == null || fields.isEmpty() ? null : fields;
             } catch (Exception e) {
                 log.warn("Could not parse ResponseEntity generic type: {}", e.getMessage());
+                return null;
             }
         }
 
         // Handle collection types directly
         if (returnType.isClassOrInterfaceType()) {
-            return typeResolver.resolveFields(returnType);
+            Map<String, Object> fields = typeResolver.resolveFields(returnType);
+            return fields == null || fields.isEmpty() ? null : fields;
         }
 
-        return Map.of("type", returnType.asString());
+        // For primitive types
+        String typeName = returnType.asString();
+        if (typeName.equals("void") || typeName.equals("java.lang.Void")) {
+            return null;
+        }
+
+        return Map.of("type", typeName);
     }
 
     @Override

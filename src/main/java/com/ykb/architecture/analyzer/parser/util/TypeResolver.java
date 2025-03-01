@@ -19,6 +19,20 @@ import java.util.*;
 
 @Slf4j
 public class TypeResolver {
+    private static final Set<String> PRIMITIVE_TYPES = Set.of(
+        "byte", "short", "int", "long", "float", "double", "boolean", "char", "String"
+    );
+
+    private static final Map<String, String> TYPE_MAPPINGS = Map.of(
+        "java.util.Date", "Date",
+        "java.time.LocalDate", "Date",
+        "java.time.LocalDateTime", "DateTime",
+        "java.time.ZonedDateTime", "DateTime",
+        "java.time.Instant", "DateTime",
+        "java.sql.Date", "Date",
+        "java.sql.Timestamp", "DateTime"
+    );
+
     private final JavaSymbolSolver symbolSolver;
     private final String sourceRoot;
     private final Set<String> processedTypes = new HashSet<>();
@@ -79,28 +93,85 @@ public class TypeResolver {
     }
 
     public Map<String, Object> resolveFields(Type type) {
-        Map<String, Object> fields = new HashMap<>();
-        try {
-            // Handle Map types specially
-            if (type.asString().startsWith("Map<")) {
-                return resolveMapType(type);
-            }
+        if (type == null) {
+            return null;
+        }
 
-            ResolvedType resolvedType = type.resolve();
-            String qualifiedName = resolvedType.describe();
+        String typeName = type.asString();
+
+        // Check if it's a mapped type
+        if (TYPE_MAPPINGS.containsKey(typeName)) {
+            return Map.of("type", TYPE_MAPPINGS.get(typeName));
+        }
+
+        // Handle primitive and simple types
+        if (PRIMITIVE_TYPES.contains(typeName) || typeName.startsWith("java.lang.")) {
+            return Map.of("type", typeName.substring(typeName.lastIndexOf('.') + 1));
+        }
+
+        // Handle collection types
+        if (typeName.startsWith("java.util.List") || typeName.startsWith("java.util.Set")) {
+            Map<String, Object> result = handleCollectionType(type);
+            return result == null || result.isEmpty() ? null : result;
+        }
+        if (typeName.startsWith("java.util.Map")) {
+            Map<String, Object> result = handleMapType(type);
+            return result == null || result.isEmpty() ? null : result;
+        }
+
+        // For custom types, try to resolve their fields
+        try {
+            Map<String, Object> result = resolveCustomType(type);
+            return result == null || result.isEmpty() ? null : result;
+        } catch (Exception e) {
+            log.warn("Could not resolve custom type: {}", typeName);
+            return Map.of("type", typeName);
+        }
+    }
+
+    private Map<String, Object> handleCollectionType(Type type) {
+        try {
+            ClassOrInterfaceType classType = type.asClassOrInterfaceType();
+            if (classType.getTypeArguments().isPresent()) {
+                Type genericType = classType.getTypeArguments().get().get(0);
+                Map<String, Object> elementType = resolveFields(genericType);
+                if (elementType != null && elementType.size() == 1 && elementType.containsKey("type")) {
+                    return Map.of("type", "array<" + elementType.get("type") + ">");
+                } else {
+                    return Map.of("type", "array", "items", elementType);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Could not resolve collection type {}: {}", type, e.getMessage());
+        }
+        return Map.of("type", "array");
+    }
+
+    private Map<String, Object> handleMapType(Type type) {
+        try {
+            ClassOrInterfaceType classType = type.asClassOrInterfaceType();
+            if (classType.getTypeArguments().isPresent()) {
+                List<Type> typeArgs = classType.getTypeArguments().get();
+                if (typeArgs.size() == 2) {
+                    Map<String, Object> keyType = resolveFields(typeArgs.get(0));
+                    Map<String, Object> valueType = resolveFields(typeArgs.get(1));
+                    String keyTypeName = keyType != null ? keyType.get("type").toString() : "Object";
+                    String valueTypeName = valueType != null ? valueType.get("type").toString() : "Object";
+                    return Map.of("type", "Map<" + keyTypeName + "," + valueTypeName + ">");
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Could not resolve map type {}: {}", type, e.getMessage());
+        }
+        return Map.of("type", "map");
+    }
+
+    private Map<String, Object> resolveCustomType(Type type) {
+        try {
+            String qualifiedName = type.asString();
 
             // Reset processed types for new resolution
             processedTypes.clear();
-
-            // Handle collection types
-            if (isCollectionType(qualifiedName)) {
-                return resolveCollectionType(type);
-            }
-
-            // Handle common Java types directly
-            if (isJavaType(qualifiedName)) {
-                return Map.of("type", normalizeType(qualifiedName));
-            }
 
             // Find and parse the DTO class
             Optional<ClassOrInterfaceDeclaration> dtoClass = findClass(qualifiedName);
@@ -112,68 +183,7 @@ public class TypeResolver {
             log.warn("Could not resolve type {}: {}", type, e.getMessage());
             return Map.of("type", normalizeType(type.asString()));
         }
-        return fields;
-    }
-
-    private Map<String, Object> resolveMapType(Type type) {
-        try {
-            ClassOrInterfaceType classType = type.asClassOrInterfaceType();
-            if (classType.getTypeArguments().isPresent()) {
-                List<Type> typeArgs = classType.getTypeArguments().get();
-                if (typeArgs.size() == 2) {
-                    return Map.of(
-                        "type", "map",
-                        "keyType", resolveFields(typeArgs.get(0)),
-                        "valueType", resolveFields(typeArgs.get(1))
-                    );
-                }
-            }
-        } catch (Exception e) {
-            log.warn("Could not resolve map type {}: {}", type, e.getMessage());
-        }
-        return Map.of("type", "map");
-    }
-
-    private boolean isCollectionType(String qualifiedName) {
-        return qualifiedName.startsWith("java.util.List") ||
-               qualifiedName.startsWith("java.util.Set") ||
-               qualifiedName.startsWith("java.util.Collection");
-    }
-
-    private Map<String, Object> resolveCollectionType(Type type) {
-        try {
-            ClassOrInterfaceType classType = type.asClassOrInterfaceType();
-            if (classType.getTypeArguments().isPresent()) {
-                Type genericType = classType.getTypeArguments().get().get(0);
-                Map<String, Object> elementType = resolveFields(genericType);
-                return Map.of(
-                    "type", "array",
-                    "items", elementType
-                );
-            }
-        } catch (Exception e) {
-            log.warn("Could not resolve collection type {}: {}", type, e.getMessage());
-        }
-        return Map.of("type", "array", "items", Map.of("type", "Object"));
-    }
-
-    private boolean isJavaType(String qualifiedName) {
-        return qualifiedName.startsWith("java.") || 
-               isPrimitiveType(qualifiedName) ||
-               isCommonType(qualifiedName);
-    }
-
-    private boolean isPrimitiveType(String type) {
-        return type.equals("boolean") || type.equals("byte") || 
-               type.equals("char") || type.equals("short") || 
-               type.equals("int") || type.equals("long") || 
-               type.equals("float") || type.equals("double");
-    }
-
-    private boolean isCommonType(String type) {
-        return type.equals("String") || type.equals("Integer") || 
-               type.equals("Long") || type.equals("Double") || 
-               type.equals("Boolean") || type.equals("Float");
+        return Map.of();
     }
 
     private Optional<ClassOrInterfaceDeclaration> findClass(String qualifiedName) {
@@ -258,13 +268,15 @@ public class TypeResolver {
                     .anyMatch(a -> a.getNameAsString().matches("OneToMany|ManyToOne|OneToOne|ManyToMany"));
 
                 if (isJpaRelation) {
-                    fields.put(fieldName, Map.of("type", "relation"));
+                    fields.put(fieldName, "relation");
                 } else if (isCollectionType(qualifiedName)) {
-                    fields.put(fieldName, resolveCollectionType(fieldType));
+                    Map<String, Object> collectionType = handleCollectionType(fieldType);
+                    fields.put(fieldName, collectionType != null ? collectionType : "array");
                 } else if (isJavaType(qualifiedName)) {
                     fields.put(fieldName, normalizeType(resolvedType.describe()));
                 } else {
-                    fields.put(fieldName, resolveFields(fieldType));
+                    Map<String, Object> customType = resolveFields(fieldType);
+                    fields.put(fieldName, customType != null ? customType : normalizeType(fieldType.asString()));
                 }
             } catch (Exception e) {
                 fields.put(fieldName, normalizeType(fieldType.asString()));
@@ -272,5 +284,30 @@ public class TypeResolver {
         }
         
         return fields;
+    }
+
+    private boolean isCollectionType(String qualifiedName) {
+        return qualifiedName.startsWith("java.util.List") ||
+               qualifiedName.startsWith("java.util.Set") ||
+               qualifiedName.startsWith("java.util.Collection");
+    }
+
+    private boolean isJavaType(String qualifiedName) {
+        return qualifiedName.startsWith("java.") || 
+               isPrimitiveType(qualifiedName) ||
+               isCommonType(qualifiedName);
+    }
+
+    private boolean isPrimitiveType(String type) {
+        return type.equals("boolean") || type.equals("byte") || 
+               type.equals("char") || type.equals("short") || 
+               type.equals("int") || type.equals("long") || 
+               type.equals("float") || type.equals("double");
+    }
+
+    private boolean isCommonType(String type) {
+        return type.equals("String") || type.equals("Integer") || 
+               type.equals("Long") || type.equals("Double") || 
+               type.equals("Boolean") || type.equals("Float");
     }
 } 
