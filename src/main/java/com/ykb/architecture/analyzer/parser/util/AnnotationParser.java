@@ -12,6 +12,10 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.util.Optional;
 
+/**
+ * Utility class for parsing Java annotations and their attributes.
+ * Handles various annotation formats and value extraction.
+ */
 @Slf4j
 @UtilityClass
 public class AnnotationParser {
@@ -20,6 +24,10 @@ public class AnnotationParser {
         return node.getAnnotationByName(annotationName).isPresent();
     }
 
+    /**
+     * Extracts a specific attribute value from an annotation.
+     * Supports both normal and single-value annotation formats.
+     */
     public static Optional<String> getAnnotationValue(NodeWithAnnotations<?> node, String annotationName, String attributeName) {
         return node.getAnnotationByName(annotationName)
                 .filter(a -> a instanceof NormalAnnotationExpr)

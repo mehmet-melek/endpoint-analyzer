@@ -15,6 +15,10 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.util.*;
 
+/**
+ * Parses Feign clients and their endpoint declarations.
+ * Handles @FeignClient annotation and its various attributes.
+ */
 @Slf4j
 public class FeignClientParser extends AbstractEndpointParser<ConsumedEndpoint> {
 
@@ -50,6 +54,10 @@ public class FeignClientParser extends AbstractEndpointParser<ConsumedEndpoint> 
                 .build();
     }
 
+    /**
+     * Extracts client name from @FeignClient annotation.
+     * Follows priority: name -> value -> url -> class name -> unknown
+     */
     private String getClientName(ClassOrInterfaceDeclaration classDeclaration) {
         // First try to get 'name' or 'value' attribute
         Optional<String> appName = AnnotationParser.getAnnotationValue(classDeclaration, FEIGN_CLIENT, "name")
@@ -75,6 +83,10 @@ public class FeignClientParser extends AbstractEndpointParser<ConsumedEndpoint> 
         return "unknown-application";
     }
 
+    /**
+     * Combines base path from @FeignClient and @RequestMapping.
+     * Ensures proper path concatenation with leading/trailing slashes.
+     */
     private String getBasePath(ClassOrInterfaceDeclaration classDeclaration) {
         // First try path from @FeignClient
         String feignPath = AnnotationParser.getAnnotationValue(classDeclaration, FEIGN_CLIENT, "path")

@@ -19,6 +19,10 @@ import java.io.File;
 import java.lang.reflect.Method;
 import java.util.*;
 
+/**
+ * Resolves Java types into a standardized format for API documentation.
+ * Handles primitive types, collections, enums, and custom objects.
+ */
 @Slf4j
 public class TypeResolver {
     private static final Set<String> PRIMITIVE_TYPES = Set.of(
@@ -98,6 +102,11 @@ public class TypeResolver {
         };
     }
 
+    /**
+     * Resolves fields of a given type into a map representation.
+     * @param type The Java type to resolve
+     * @return Map containing field information, or null if type cannot be resolved
+     */
     public Map<String, Object> resolveFields(Type type) {
         if (type == null) {
             return null;
@@ -135,6 +144,10 @@ public class TypeResolver {
         }
     }
 
+    /**
+     * Handles collection types (List, Set) and their generic parameters.
+     * Returns a simplified array representation.
+     */
     private Map<String, Object> handleCollectionType(Type type) {
         try {
             if (!type.isClassOrInterfaceType()) {
@@ -218,6 +231,10 @@ public class TypeResolver {
         return Map.of();
     }
 
+    /**
+     * Processes enum types, including their values and @JsonValue annotations.
+     * @return Map containing enum type and possible values
+     */
     private Map<String, Object> resolveEnumType(Class<?> enumClass) {
         try {
             Object[] enumConstants = enumClass.getEnumConstants();

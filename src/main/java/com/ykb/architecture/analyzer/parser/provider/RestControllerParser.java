@@ -14,6 +14,10 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.util.*;
 
+/**
+ * Parses Spring REST controllers and their endpoints.
+ * Handles @RestController and @Controller annotations with their mappings.
+ */
 @Slf4j
 public class RestControllerParser extends AbstractEndpointParser<ApiCall> {
 
@@ -54,6 +58,10 @@ public class RestControllerParser extends AbstractEndpointParser<ApiCall> {
         return endpoints;
     }
 
+    /**
+     * Determines if a class should be parsed as a REST controller.
+     * Checks for @RestController or @Controller + @ResponseBody combination.
+     */
     @Override
     protected boolean shouldParse(ClassOrInterfaceDeclaration classDeclaration) {
         return AnnotationParser.hasAnnotation(classDeclaration, REST_CONTROLLER) ||
@@ -86,6 +94,10 @@ public class RestControllerParser extends AbstractEndpointParser<ApiCall> {
         return apiCalls;
     }
 
+    /**
+     * Parses an endpoint method into an ApiCall object.
+     * Extracts HTTP method, path, parameters, and request/response bodies.
+     */
     private ApiCall parseApiCall(MethodDeclaration method, String basePath) {
         String methodPath = getMethodPath(method);
         String fullPath = PathResolver.combinePaths(basePath, methodPath);
