@@ -100,11 +100,11 @@ public class RestControllerParser extends AbstractEndpointParser<ApiCall> {
      */
     private ApiCall parseApiCall(MethodDeclaration method, String basePath) {
         String methodPath = getMethodPath(method);
-        String fullPath = PathResolver.combinePaths(basePath, methodPath);
+        String path = PathResolver.combinePaths(basePath, methodPath);
 
         return ApiCall.builder()
                 .httpMethod(determineHttpMethod(method))
-                .fullPath(fullPath)
+                .fullPath(path)
                 .pathVariables(parsePathVariables(method))
                 .queryParameters(parseQueryParameters(method))
                 .requestBody(parseRequestBody(method))
