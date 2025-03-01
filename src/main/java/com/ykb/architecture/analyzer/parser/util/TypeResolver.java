@@ -1,21 +1,22 @@
 package com.ykb.architecture.analyzer.parser.util;
 
+import com.fasterxml.jackson.annotation.JsonValue;
+import com.github.javaparser.ParserConfiguration;
 import com.github.javaparser.StaticJavaParser;
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import com.github.javaparser.ast.body.FieldDeclaration;
 import com.github.javaparser.ast.type.ClassOrInterfaceType;
 import com.github.javaparser.ast.type.Type;
-import com.github.javaparser.resolution.types.ResolvedReferenceType;
 import com.github.javaparser.resolution.types.ResolvedType;
 import com.github.javaparser.symbolsolver.JavaSymbolSolver;
 import com.github.javaparser.symbolsolver.resolution.typesolvers.CombinedTypeSolver;
 import com.github.javaparser.symbolsolver.resolution.typesolvers.JavaParserTypeSolver;
 import com.github.javaparser.symbolsolver.resolution.typesolvers.ReflectionTypeSolver;
 import lombok.extern.slf4j.Slf4j;
-import com.github.javaparser.ParserConfiguration;
 
 import java.io.File;
+import java.lang.reflect.Method;
 import java.util.*;
 
 @Slf4j
@@ -191,6 +192,16 @@ public class TypeResolver {
         try {
             String qualifiedName = type.asString();
 
+            // Check if type is an Enum
+            try {
+                Class<?> clazz = Class.forName(qualifiedName);
+                if (clazz.isEnum()) {
+                    return resolveEnumType(clazz);
+                }
+            } catch (ClassNotFoundException ignored) {
+                // Continue with normal type resolution
+            }
+
             // Reset processed types for new resolution
             processedTypes.clear();
 
@@ -205,6 +216,83 @@ public class TypeResolver {
             return Map.of("type", normalizeType(type.asString()));
         }
         return Map.of();
+    }
+
+    private Map<String, Object> resolveEnumType(Class<?> enumClass) {
+        try {
+            Object[] enumConstants = enumClass.getEnumConstants();
+            if (enumConstants == null || enumConstants.length == 0) {
+                return Map.of("type", "string", "enum", new ArrayList<>());
+            }
+
+            // Try to find the most common return type from enum methods
+            String valueType = findEnumValueType(enumClass);
+            List<Object> enumValues = new ArrayList<>();
+            
+            for (Object enumConstant : enumConstants) {
+                enumValues.add(enumConstant.toString());
+            }
+
+            Map<String, Object> result = new HashMap<>();
+            result.put("type", valueType);
+            result.put("enum", enumValues);
+            return result;
+
+        } catch (Exception e) {
+            log.warn("Could not resolve enum type {}: {}", enumClass.getName(), e.getMessage());
+            return Map.of("type", "string");
+        }
+    }
+
+    private String findEnumValueType(Class<?> enumClass) {
+        // Check for common value methods
+        try {
+            // First check for @JsonValue annotation
+            Method jsonValueMethod = findJsonValueMethod(enumClass);
+            if (jsonValueMethod != null) {
+                return getTypeForClass(jsonValueMethod.getReturnType());
+            }
+
+            // Then check for getValue or value method
+            Method valueMethod = findValueMethod(enumClass);
+            if (valueMethod != null) {
+                return getTypeForClass(valueMethod.getReturnType());
+            }
+        } catch (Exception ignored) {
+            // Fall back to string if we can't determine the value type
+        }
+
+        return "string";
+    }
+
+    private Method findJsonValueMethod(Class<?> enumClass) {
+        for (Method method : enumClass.getDeclaredMethods()) {
+            if (method.isAnnotationPresent(JsonValue.class)) {
+                return method;
+            }
+        }
+        return null;
+    }
+
+    private Method findValueMethod(Class<?> enumClass) {
+        try {
+            return enumClass.getMethod("getValue");
+        } catch (NoSuchMethodException e1) {
+            try {
+                return enumClass.getMethod("value");
+            } catch (NoSuchMethodException e2) {
+                return null;
+            }
+        }
+    }
+
+    private String getTypeForClass(Class<?> clazz) {
+        if (clazz == String.class) return "string";
+        if (clazz == Integer.class || clazz == int.class) return "integer";
+        if (clazz == Long.class || clazz == long.class) return "long";
+        if (clazz == Double.class || clazz == double.class) return "double";
+        if (clazz == Boolean.class || clazz == boolean.class) return "boolean";
+        return "string";
     }
 
     private Optional<ClassOrInterfaceDeclaration> findClass(String qualifiedName) {
