@@ -16,19 +16,19 @@ public class Application {
             .enable(SerializationFeature.INDENT_OUTPUT);
 
     public static void main(String[] args) {
-        if (args.length < 2) {
-            System.err.println("Usage: java -jar endpoint-analyzer.jar <source-root> <service-name> [output-file]");
+        if (args.length < 1) {
+            log.error("Please provide source root path as argument");
             System.exit(1);
         }
 
         try {
             String sourceRoot = args[0];
-            String serviceName = args[1];
-            String outputFile = args.length > 2 ? args[2] : "endpoint-analysis.json";
+            String applicationName = System.getProperty("pkg.name", "unknown-application");
+            String outputFile = applicationName + ".json";
 
-            log.info("Analyzing service {} from source root: {}", serviceName, sourceRoot);
+            log.info("Analyzing service {} from source root: {}", applicationName, sourceRoot);
             
-            AnalyzerService analyzerService = new AnalyzerService(sourceRoot, serviceName);
+            AnalyzerService analyzerService = new AnalyzerService(sourceRoot, applicationName);
             ServiceReport report = analyzerService.analyze();
 
             // Write report to file
@@ -38,7 +38,7 @@ public class Application {
             log.info("Analysis complete. Report written to: {}", outputPath.toAbsolutePath());
 
         } catch (Exception e) {
-            log.error("Error during analysis", e);
+            log.error("Analysis failed: {}", e.getMessage(), e);
             System.exit(1);
         }
     }
