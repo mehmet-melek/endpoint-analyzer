@@ -23,7 +23,7 @@ public class Application {
 
         try {
             String sourceRoot = args[0];
-            String applicationName = System.getProperty("pkg.name", "unknown-application");
+            String applicationName = System.getProperty("pkg.name", "unknown");
             String outputFile = applicationName + ".json";
 
             log.info("Analyzing service {} from source root: {}", applicationName, sourceRoot);

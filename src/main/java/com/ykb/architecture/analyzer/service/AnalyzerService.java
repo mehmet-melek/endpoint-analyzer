@@ -80,35 +80,14 @@ public class AnalyzerService {
         }
     }
 
-    private ServiceReport buildServiceReport(String serviceName, List<ApiCall> providedEndpoints, List<ConsumedEndpoint> consumedEndpoints) {
-        // Merge consumed endpoints with same client name
-        Map<String, List<ApiCall>> clientApiCallsMap = new HashMap<>();
-        
-        // Group API calls by client name
-        for (ConsumedEndpoint endpoint : consumedEndpoints) {
-            String clientName = endpoint.getClientName();
-            List<ApiCall> existingCalls = clientApiCallsMap.computeIfAbsent(clientName, k -> new ArrayList<>());
-            existingCalls.addAll(endpoint.getApiCalls());
-        }
-
-        // Create new consolidated ConsumedEndpoint list
-        List<ConsumedEndpoint> mergedEndpoints = clientApiCallsMap.entrySet().stream()
-                .map(entry -> {
-                    int callCount = entry.getValue().size();
-                    if (callCount > 0) {
-                        log.info("Client '{}' has {} total API calls", entry.getKey(), callCount);
-                    }
-                    return ConsumedEndpoint.builder()
-                            .clientName(entry.getKey())
-                            .apiCalls(new ArrayList<>(entry.getValue()))
-                            .build();
-                })
-                .collect(Collectors.toList());
-
+    private ServiceReport buildServiceReport(String applicationName, List<ApiCall> providedEndpoints, List<ConsumedEndpoint> consumedEndpoints) {
         return ServiceReport.builder()
-                .applicationName(serviceName)
+                .environment(System.getProperty("env.code", "unknown"))
+                .organizationName(System.getProperty("pkg.product.code", "unknown"))
+                .productName(System.getProperty("pkg.org.code", "unknown"))
+                .applicationName(applicationName)
                 .providedEndpoints(providedEndpoints)
-                .consumedEndpoints(mergedEndpoints)
+                .consumedEndpoints(consumedEndpoints)
                 .build();
     }
 
