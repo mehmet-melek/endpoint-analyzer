@@ -136,20 +136,36 @@ public class TypeResolver {
 
     private Map<String, Object> handleCollectionType(Type type) {
         try {
+            if (!type.isClassOrInterfaceType()) {
+                return Map.of("type", "array");
+            }
+
             ClassOrInterfaceType classType = type.asClassOrInterfaceType();
-            if (classType.getTypeArguments().isPresent()) {
-                Type genericType = classType.getTypeArguments().get().get(0);
-                Map<String, Object> elementType = resolveFields(genericType);
-                if (elementType != null && elementType.size() == 1 && elementType.containsKey("type")) {
-                    return Map.of("type", "array<" + elementType.get("type") + ">");
-                } else {
-                    return Map.of("type", "array", "items", elementType);
-                }
+            if (!classType.getTypeArguments().isPresent()) {
+                return Map.of("type", "array");
+            }
+
+            Type genericType = classType.getTypeArguments().get().get(0);
+            
+            // Eğer generic tip primitive veya basit bir tip ise
+            if (genericType.isPrimitiveType() || 
+                PRIMITIVE_TYPES.contains(genericType.asString()) ||
+                genericType.asString().startsWith("java.lang.")) {
+                String elementType = normalizeType(genericType.asString());
+                return Map.of("type", "array<" + elementType + ">");
+            }
+
+            // Diğer tipler için
+            Map<String, Object> elementType = resolveFields(genericType);
+            if (elementType != null && elementType.size() == 1 && elementType.containsKey("type")) {
+                return Map.of("type", "array<" + elementType.get("type") + ">");
+            } else {
+                return Map.of("type", "array", "items", elementType != null ? elementType : "Object");
             }
         } catch (Exception e) {
-            log.warn("Could not resolve collection type {}: {}", type, e.getMessage());
+            log.debug("Could not resolve collection type {}: {}", type, e.getMessage());
+            return Map.of("type", "array");
         }
-        return Map.of("type", "array");
     }
 
     private Map<String, Object> handleMapType(Type type) {
