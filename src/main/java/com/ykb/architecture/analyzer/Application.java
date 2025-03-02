@@ -16,19 +16,21 @@ public class Application {
             .enable(SerializationFeature.INDENT_OUTPUT);
 
     public static void main(String[] args) {
-        if (args.length < 1) {
-            log.error("Please provide source root path as argument");
+        if (args.length < 2) {
+            log.error("Please provide source root path and config file path as arguments");
             System.exit(1);
         }
 
         try {
             String sourceRoot = args[0];
+            String configPath = args[1];
             String applicationName = System.getProperty("pkg.name", "unknown");
             String outputFile = applicationName + ".json";
 
-            log.info("Analyzing service {} from source root: {}", applicationName, sourceRoot);
+            log.info("Analyzing service {} from source root: {} with config: {}", 
+                applicationName, sourceRoot, configPath);
             
-            AnalyzerService analyzerService = new AnalyzerService(sourceRoot, applicationName);
+            AnalyzerService analyzerService = new AnalyzerService(sourceRoot, applicationName, configPath);
             ServiceReport report = analyzerService.analyze();
 
             // Write report to file

@@ -27,11 +27,11 @@ public class AnalyzerService {
     private final RestControllerParser restControllerParser;
     private final FeignClientParser feignClientParser;
 
-    public AnalyzerService(String sourceRoot, String serviceName) {
+    public AnalyzerService(String sourceRoot, String serviceName, String configPath) {
         this.sourceRoot = sourceRoot;
         this.serviceName = serviceName;
         this.restControllerParser = new RestControllerParser(sourceRoot);
-        this.feignClientParser = new FeignClientParser(sourceRoot);
+        this.feignClientParser = new FeignClientParser(sourceRoot, configPath);
     }
 
     public ServiceReport analyze() {

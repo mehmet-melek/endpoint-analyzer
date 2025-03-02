@@ -9,6 +9,7 @@ import com.ykb.architecture.analyzer.core.model.endpoint.ConsumedEndpoint;
 import com.ykb.architecture.analyzer.core.model.method.ApiCall;
 import com.ykb.architecture.analyzer.parser.base.AbstractEndpointParser;
 import com.ykb.architecture.analyzer.parser.util.AnnotationParser;
+import com.ykb.architecture.analyzer.parser.util.ConfigReader;
 import com.ykb.architecture.analyzer.parser.util.PathResolver;
 import com.ykb.architecture.analyzer.parser.util.TypeResolver;
 import lombok.extern.slf4j.Slf4j;
@@ -31,9 +32,11 @@ public class FeignClientParser extends AbstractEndpointParser<ConsumedEndpoint> 
     private static final String PATCH_MAPPING = "PatchMapping";
 
     private final TypeResolver typeResolver;
+    private final ConfigReader configReader;
 
-    public FeignClientParser(String sourceRoot) {
+    public FeignClientParser(String sourceRoot, String configPath) {
         this.typeResolver = new TypeResolver(sourceRoot);
+        this.configReader = new ConfigReader(configPath);
     }
 
     @Override
@@ -64,7 +67,10 @@ public class FeignClientParser extends AbstractEndpointParser<ConsumedEndpoint> 
                 .or(() -> AnnotationParser.getAnnotationValue(classDeclaration, FEIGN_CLIENT, "value"));
         
         if (appName.isPresent()) {
-            return appName.get();
+            String name = appName.get();
+            // Check if it's a parametric value
+            return configReader.resolveParametricValue(name)
+                    .orElse(name); // Use original value if not found in config
         }
 
         // If no name/value, try to get 'url' attribute
@@ -76,7 +82,9 @@ public class FeignClientParser extends AbstractEndpointParser<ConsumedEndpoint> 
         // If no url, try to get single value
         Optional<String> singleValue = AnnotationParser.getAnnotationSingleValue(classDeclaration, FEIGN_CLIENT);
         if (singleValue.isPresent()) {
-            return singleValue.get();
+            String value = singleValue.get();
+            return configReader.resolveParametricValue(value)
+                    .orElse(value);
         }
 
         log.warn("No name, value, url or direct value found for FeignClient: {}", classDeclaration.getNameAsString());
