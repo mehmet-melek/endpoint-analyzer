@@ -52,7 +52,9 @@ public class FeignClientParser extends AbstractEndpointParser<ConsumedEndpoint> 
         List<ApiCall> apiCalls = parseApiCalls(classDeclaration, basePath);
 
         return ConsumedEndpoint.builder()
-                .clientName(clientName)
+                .clientApplicationName(clientName)
+                .clientOrganizationName(extractOrganizationName(clientName))
+                .clientProductName(extractProductName(clientName))
                 .apiCalls(apiCalls)
                 .build();
     }
@@ -260,6 +262,32 @@ public class FeignClientParser extends AbstractEndpointParser<ConsumedEndpoint> 
         return Map.of("type", typeName);
     }
 
+    private String extractOrganizationName(String clientName) {
+        if (clientName.startsWith("http") || !clientName.contains(".")) {
+            return "unknown";
+        }
+        
+        String[] parts = clientName.split("\\.");
+        if (parts.length >= 3) {
+            return parts[0];
+        }
+        
+        return "unknown";
+    }
+
+    private String extractProductName(String clientName) {
+        if (clientName.startsWith("http") || !clientName.contains(".")) {
+            return "unknown";
+        }
+        
+        String[] parts = clientName.split("\\.");
+        if (parts.length >= 3) {
+            return parts[0] + "." + parts[1];
+        }
+        
+        return "unknown";
+    }
+
     @Override
     public List<ConsumedEndpoint> parse(CompilationUnit compilationUnit) {
         List<ConsumedEndpoint> endpoints = new ArrayList<>();
@@ -270,7 +298,7 @@ public class FeignClientParser extends AbstractEndpointParser<ConsumedEndpoint> 
                     .map(this::parseClass)
                     .forEach(endpoint -> {
                         log.debug("Found FeignClient: {} with {} API calls", 
-                            endpoint.getClientName(), endpoint.getApiCalls().size());
+                            endpoint.getClientApplicationName(), endpoint.getApiCalls().size());
                         endpoints.add(endpoint);
                     });
         } catch (Exception e) {

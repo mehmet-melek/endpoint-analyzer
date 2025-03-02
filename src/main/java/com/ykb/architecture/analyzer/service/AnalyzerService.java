@@ -14,10 +14,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 @Slf4j
@@ -71,7 +68,7 @@ public class AnalyzerService {
             if (!newConsumedEndpoints.isEmpty()) {
                 newConsumedEndpoints.forEach(endpoint -> 
                     log.info("Found Feign client '{}' in {} with {} endpoints", 
-                        endpoint.getClientName(), getSimpleFileName(path), endpoint.getApiCalls().size()));
+                        endpoint.getClientApplicationName(), getSimpleFileName(path), endpoint.getApiCalls().size()));
                 consumedEndpoints.addAll(newConsumedEndpoints);
             }
 
