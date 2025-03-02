@@ -24,13 +24,11 @@ public class Application {
         try {
             String sourceRoot = args[0];
             String configPath = args[1];
-            String applicationName = System.getProperty("pkg.name", "unknown");
-            String outputFile = applicationName + ".json";
+            String outputFile = "endpoint_analysis_report.json";
 
-            log.info("Analyzing service {} from source root: {} with config: {}", 
-                applicationName, sourceRoot, configPath);
+            log.info("Analyzing source root: {} with config: {}", sourceRoot, configPath);
             
-            AnalyzerService analyzerService = new AnalyzerService(sourceRoot, applicationName, configPath);
+            AnalyzerService analyzerService = new AnalyzerService(sourceRoot, configPath);
             ServiceReport report = analyzerService.analyze();
 
             // Write report to file

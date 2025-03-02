@@ -20,19 +20,17 @@ import java.util.stream.Stream;
 @Slf4j
 public class AnalyzerService {
     private final String sourceRoot;
-    private final String serviceName;
     private final RestControllerParser restControllerParser;
     private final FeignClientParser feignClientParser;
 
-    public AnalyzerService(String sourceRoot, String serviceName, String configPath) {
+    public AnalyzerService(String sourceRoot, String configPath) {
         this.sourceRoot = sourceRoot;
-        this.serviceName = serviceName;
         this.restControllerParser = new RestControllerParser(sourceRoot);
         this.feignClientParser = new FeignClientParser(sourceRoot, configPath);
     }
 
     public ServiceReport analyze() {
-        log.info("Starting analysis for service: {}", serviceName);
+        log.info("Starting analysis");
         List<ApiCall> providedEndpoints = new ArrayList<>();
         List<ConsumedEndpoint> consumedEndpoints = new ArrayList<>();
 
@@ -46,7 +44,7 @@ public class AnalyzerService {
             log.error("Failed to scan source directory: {}, error: {}", sourceRoot, e.getMessage());
         }
 
-        ServiceReport report = buildServiceReport(serviceName, providedEndpoints, consumedEndpoints);
+        ServiceReport report = buildServiceReport(providedEndpoints, consumedEndpoints);
         log.info("Analysis completed. Found {} provided endpoints and {} consumed clients", 
             report.getProvidedEndpoints().size(), report.getConsumedEndpoints().size());
         return report;
@@ -77,12 +75,8 @@ public class AnalyzerService {
         }
     }
 
-    private ServiceReport buildServiceReport(String applicationName, List<ApiCall> providedEndpoints, List<ConsumedEndpoint> consumedEndpoints) {
+    private ServiceReport buildServiceReport(List<ApiCall> providedEndpoints, List<ConsumedEndpoint> consumedEndpoints) {
         return ServiceReport.builder()
-                .environment(System.getProperty("env.code", "unknown"))
-                .organizationName(System.getProperty("pkg.product.code", "unknown"))
-                .productName(System.getProperty("pkg.org.code", "unknown"))
-                .applicationName(applicationName)
                 .providedEndpoints(providedEndpoints)
                 .consumedEndpoints(consumedEndpoints)
                 .build();
