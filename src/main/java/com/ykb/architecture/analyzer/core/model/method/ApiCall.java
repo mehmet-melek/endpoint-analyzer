@@ -12,8 +12,8 @@ public class ApiCall {
     private String httpMethod;
     @JsonProperty("path")
     private String fullPath;
-    private Map<String, Object> pathVariables;
-    private Map<String, Object> queryParameters;
-    private Map<String, Object> requestBody;
-    private Map<String, Object> responseBody;
+    private Map<String, String> pathVariables;
+    private Map<String, String> queryParameters;
+    private Object requestBody;
+    private Object responseBody;
 } 

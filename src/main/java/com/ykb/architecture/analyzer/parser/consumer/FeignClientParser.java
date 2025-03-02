@@ -4,6 +4,7 @@ import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.NodeList;
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
+import com.github.javaparser.ast.body.Parameter;
 import com.github.javaparser.ast.type.Type;
 import com.ykb.architecture.analyzer.core.model.endpoint.ConsumedEndpoint;
 import com.ykb.architecture.analyzer.core.model.method.ApiCall;
@@ -178,8 +179,8 @@ public class FeignClientParser extends AbstractEndpointParser<ConsumedEndpoint> 
         return requestMethod.map(m -> m.replace("RequestMethod.", "")).orElse("GET");
     }
 
-    private Map<String, Object> parsePathVariables(MethodDeclaration method) {
-        Map<String, Object> pathVariables = new HashMap<>();
+    private Map<String, String> parsePathVariables(MethodDeclaration method) {
+        Map<String, String> pathVariables = new HashMap<>();
         method.getParameters().stream()
                 .filter(p -> AnnotationParser.hasAnnotation(p, "PathVariable"))
                 .forEach(p -> {
@@ -190,8 +191,8 @@ public class FeignClientParser extends AbstractEndpointParser<ConsumedEndpoint> 
         return pathVariables.isEmpty() ? null : pathVariables;
     }
 
-    private Map<String, Object> parseQueryParameters(MethodDeclaration method) {
-        Map<String, Object> queryParams = new HashMap<>();
+    private Map<String, String> parseQueryParameters(MethodDeclaration method) {
+        Map<String, String> queryParams = new HashMap<>();
         method.getParameters().stream()
                 .filter(p -> AnnotationParser.hasAnnotation(p, "RequestParam"))
                 .forEach(p -> {
@@ -202,64 +203,29 @@ public class FeignClientParser extends AbstractEndpointParser<ConsumedEndpoint> 
         return queryParams.isEmpty() ? null : queryParams;
     }
 
-    private Map<String, Object> parseRequestBody(MethodDeclaration method) {
-        Map<String, Object> result = method.getParameters().stream()
-                .filter(p -> AnnotationParser.hasAnnotation(p, "RequestBody"))
-                .findFirst()
-                .map(p -> typeResolver.resolveFields(p.getType()))
-                .orElse(null);
-        return result == null || result.isEmpty() ? null : result;
+    private Object parseRequestBody(MethodDeclaration method) {
+        Optional<Parameter> requestBodyParam = findRequestBodyParameter(method);
+        if (requestBodyParam.isEmpty()) {
+            return null;
+        }
+
+        Type paramType = requestBodyParam.get().getType();
+        return typeResolver.resolveRequestBody(paramType);
     }
 
-    private Map<String, Object> parseResponseBody(MethodDeclaration method) {
-        Type returnType = method.getType();
-        
-        if (returnType.isVoidType()) {
+    private Object parseResponseBody(MethodDeclaration method) {
+        // If method returns void, there's no response body
+        if (method.getType().isVoidType()) {
             return null;
         }
 
-        // Handle ResponseEntity
-        if (returnType.asString().startsWith("ResponseEntity")) {
-            try {
-                if (returnType.asString().contains("ResponseEntity<Void>") || 
-                    returnType.asString().contains("ResponseEntity<java.lang.Void>")) {
-                    return null;
-                }
+        return typeResolver.resolveResponseBody(method.getType());
+    }
 
-                Type genericType = returnType.asClassOrInterfaceType()
-                        .getTypeArguments()
-                        .orElse(new NodeList<>())
-                        .stream()
-                        .findFirst()
-                        .orElse(returnType);
-
-                if (genericType.isVoidType() || 
-                    genericType.asString().equals("Void") || 
-                    genericType.asString().equals("java.lang.Void")) {
-                    return null;
-                }
-
-                Map<String, Object> fields = typeResolver.resolveFields(genericType);
-                return fields == null || fields.isEmpty() ? null : fields;
-            } catch (Exception e) {
-                log.warn("Could not parse ResponseEntity generic type: {}", e.getMessage());
-                return null;
-            }
-        }
-
-        // Handle collection types directly
-        if (returnType.isClassOrInterfaceType()) {
-            Map<String, Object> fields = typeResolver.resolveFields(returnType);
-            return fields == null || fields.isEmpty() ? null : fields;
-        }
-
-        // For primitive types
-        String typeName = returnType.asString();
-        if (typeName.equals("void") || typeName.equals("java.lang.Void")) {
-            return null;
-        }
-
-        return Map.of("type", typeName);
+    private Optional<Parameter> findRequestBodyParameter(MethodDeclaration method) {
+        return method.getParameters().stream()
+                .filter(p -> AnnotationParser.hasAnnotation(p, "RequestBody"))
+                .findFirst();
     }
 
     private String extractOrganizationName(String clientName) {

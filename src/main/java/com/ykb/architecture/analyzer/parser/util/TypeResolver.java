@@ -233,52 +233,30 @@ public class TypeResolver {
                 return createFieldDefinition("array", false);
             }
 
-            // Extract generic type from the type description
             String genericTypeName = typeName.substring(typeName.indexOf('<') + 1, typeName.lastIndexOf('>'));
             
-            // Handle primitive or simple types
-            if (isPrimitiveType(genericTypeName) || isCommonType(genericTypeName)) {
-                String elementType = normalizeType(genericTypeName);
-                Map<String, Object> result = new LinkedHashMap<>();
-                result.put("type", "array");
-                result.put("items", createFieldDefinition(elementType, false));
-                result.put("required", false);
-                return result;
-            }
-
             Map<String, Object> result = new LinkedHashMap<>();
             result.put("type", "array");
             result.put("required", false);
 
-            // Reset processed types before resolving fields
-            processedTypes.clear();
-
             // For complex types, try to resolve their fields
             try {
-                // Try to find and parse the DTO class directly
                 Optional<ClassOrInterfaceDeclaration> dtoClass = findClass(genericTypeName);
-                
                 if (dtoClass.isPresent()) {
                     Map<String, Object> itemFields = extractFields(dtoClass.get());
                     if (itemFields != null && !itemFields.isEmpty()) {
-                        result.put("items", itemFields);
+                        // Move ignoreUnknown to collection level if present
+                        if (itemFields.containsKey("ignoreUnknown")) {
+                            result.put("ignoreUnknown", itemFields.remove("ignoreUnknown"));
+                        }
+                        result.put("items", itemFields.get("items"));
                         return result;
                     }
-                }
-
-                // If direct lookup fails, try parsing as Type
-                String simpleClassName = genericTypeName.substring(genericTypeName.lastIndexOf('.') + 1);
-                Type genericType = StaticJavaParser.parseType(simpleClassName);
-                Map<String, Object> resolvedFields = resolveFields(genericType);
-                if (resolvedFields != null && !resolvedFields.isEmpty()) {
-                    result.put("items", resolvedFields);
-                    return result;
                 }
             } catch (Exception e) {
                 log.debug("Could not resolve collection item type {}: {}", genericTypeName, e.getMessage());
             }
 
-            // If we can't resolve the fields, return basic type info
             result.put("items", createFieldDefinition(genericTypeName, false));
             return result;
 
@@ -480,35 +458,29 @@ public class TypeResolver {
     }
 
     private Map<String, Object> extractFields(ClassOrInterfaceDeclaration classDeclaration) {
-        Map<String, Object> fields = new LinkedHashMap<>();  // Changed to LinkedHashMap
+        Map<String, Object> fields = new LinkedHashMap<>();
+        
+        // Check for @JsonIgnoreProperties
+        boolean ignoreUnknown = hasJsonIgnoreProperties(classDeclaration);
+        if (ignoreUnknown) {
+            fields.put("ignoreUnknown", true);
+        }
+
+        // Add items object to hold field definitions
+        Map<String, Object> items = new LinkedHashMap<>();
+        fields.put("items", items);
         
         for (FieldDeclaration field : classDeclaration.getFields()) {
-            // Skip fields with @JsonIgnore annotation
-            boolean isJsonIgnored = field.getAnnotations().stream()
-                .anyMatch(a -> {
-                    String name = a.getNameAsString();
-                    return name.equals("JsonIgnore") || name.equals("com.fasterxml.jackson.annotation.JsonIgnore");
-                });
-            
-            if (isJsonIgnored) {
-                continue;  // Skip this field
+            // Skip fields with @JsonIgnore
+            if (hasAnnotation(field, "JsonIgnore")) {
+                continue;
             }
 
-            // Get field name, checking @JsonProperty first
+            // Get field name from @JsonProperty if present
             String fieldName = field.getAnnotations().stream()
-                .filter(a -> {
-                    String name = a.getNameAsString();
-                    return name.equals("JsonProperty") || name.equals("com.fasterxml.jackson.annotation.JsonProperty");
-                })
+                .filter(a -> a.getNameAsString().equals("JsonProperty"))
                 .findFirst()
-                .map(annotation -> {
-                    Optional<String> value = AnnotationParser.getAnnotationValue(annotation, "value");
-                    if (value.isPresent()) {
-                        return value.get();
-                    }
-                    return AnnotationParser.getAnnotationSingleValue(annotation)
-                            .orElse(field.getVariable(0).getNameAsString());
-                })
+                .map(this::getJsonPropertyValue)
                 .orElse(field.getVariable(0).getNameAsString());
 
             Type fieldType = field.getVariable(0).getType();
@@ -516,64 +488,81 @@ public class TypeResolver {
             try {
                 ResolvedType resolvedType = fieldType.resolve();
                 String qualifiedName = resolvedType.describe();
-                boolean isRequired = isFieldRequired(field);
+                
+                // Check for required annotations
+                boolean isRequired = hasRequiredAnnotation(field);
 
-                // Check for JPA relations
-                boolean isJpaRelation = field.getAnnotations().stream()
-                    .anyMatch(a -> a.getNameAsString().matches("OneToMany|ManyToOne|OneToOne|ManyToMany"));
-
-                // Check for transient fields
-                boolean isTransient = field.getAnnotations().stream()
-                    .anyMatch(a -> a.getNameAsString().equals("Transient") || 
-                                 a.getNameAsString().equals("javax.persistence.Transient") ||
-                                 a.getNameAsString().equals("jakarta.persistence.Transient"));
-
-                if (isTransient) {
-                    continue;  // Skip transient fields
-                }
-
-                if (isJpaRelation) {
-                    fields.put(fieldName, createFieldDefinition("relation", isRequired));
-                } else if (isCollectionType(qualifiedName)) {
+                if (isCollectionType(qualifiedName)) {
                     Map<String, Object> collectionType = handleCollectionType(resolvedType);
-                    fields.put(fieldName, collectionType);
+                    if (collectionType != null) {
+                        collectionType.put("required", isRequired);
+                        items.put(fieldName, collectionType);
+                    }
                 } else if (isJavaType(qualifiedName)) {
-                    fields.put(fieldName, createFieldDefinition(normalizeType(resolvedType.describe()), isRequired));
+                    items.put(fieldName, createFieldDefinition(normalizeType(resolvedType.describe()), isRequired));
                 } else {
+                    // For custom types (DTOs), check their @JsonIgnoreProperties too
                     Map<String, Object> customType = resolveFields(fieldType);
-                    fields.put(fieldName, customType != null ? 
-                            customType : 
-                            createFieldDefinition(normalizeType(fieldType.asString()), isRequired));
+                    if (customType != null) {
+                        customType.put("required", isRequired);
+                        items.put(fieldName, customType);
+                    } else {
+                        items.put(fieldName, createFieldDefinition(normalizeType(fieldType.asString()), isRequired));
+                    }
                 }
             } catch (Exception e) {
-                fields.put(fieldName, createFieldDefinition(normalizeType(fieldType.asString()), false));
+                items.put(fieldName, createFieldDefinition(normalizeType(fieldType.asString()), false));
             }
         }
         
         return fields;
     }
 
-    private boolean isFieldRequired(FieldDeclaration field) {
+    private boolean hasAnnotation(FieldDeclaration field, String annotationName) {
         return field.getAnnotations().stream()
-                .anyMatch(a -> {
-                    String name = a.getNameAsString();
-                    return name.equals("NotNull") || 
-                           name.equals("NotEmpty") || 
-                           name.equals("NotBlank") ||
-                           name.equals("jakarta.validation.constraints.NotNull") ||
-                           name.equals("jakarta.validation.constraints.NotEmpty") ||
-                           name.equals("jakarta.validation.constraints.NotBlank") ||
-                           name.equals("javax.validation.constraints.NotNull") ||
-                           name.equals("javax.validation.constraints.NotEmpty") ||
-                           name.equals("javax.validation.constraints.NotBlank");
-                });
+            .anyMatch(a -> {
+                String name = a.getNameAsString();
+                return name.equals(annotationName) || 
+                       name.equals("com.fasterxml.jackson.annotation." + annotationName) ||
+                       name.equals("javax.persistence." + annotationName) ||
+                       name.equals("jakarta.persistence." + annotationName);
+            });
     }
 
-    private Map<String, Object> createFieldDefinition(String type, boolean required) {
-        Map<String, Object> fieldDef = new LinkedHashMap<>();  // Use LinkedHashMap to maintain order
-        fieldDef.put("type", type);
-        fieldDef.put("required", required);
-        return fieldDef;
+    private boolean hasRequiredAnnotation(FieldDeclaration field) {
+        return field.getAnnotations().stream()
+            .anyMatch(a -> {
+                String name = a.getNameAsString();
+                return name.equals("NotNull") || 
+                       name.equals("NotEmpty") || 
+                       name.equals("NotBlank") ||
+                       name.equals("jakarta.validation.constraints.NotNull") ||
+                       name.equals("jakarta.validation.constraints.NotEmpty") ||
+                       name.equals("jakarta.validation.constraints.NotBlank") ||
+                       name.equals("javax.validation.constraints.NotNull") ||
+                       name.equals("javax.validation.constraints.NotEmpty") ||
+                       name.equals("javax.validation.constraints.NotBlank") ||
+                       name.equals("org.jetbrains.annotations.NotNull") ||
+                       name.equals("lombok.NonNull");
+            });
+    }
+
+    private String getJsonPropertyValue(AnnotationExpr annotation) {
+        try {
+            // Check if it's a single value annotation: @JsonProperty("value")
+            if (!annotation.toString().contains("value=")) {
+                return annotation.toString()
+                    .replaceAll("@JsonProperty\\(\"(.+)\"\\)", "$1")
+                    .replaceAll("@com.fasterxml.jackson.annotation.JsonProperty\\(\"(.+)\"\\)", "$1");
+            }
+            
+            // If it has named parameters: @JsonProperty(value="value")
+            return annotation.toString()
+                .replaceAll(".*value\\s*=\\s*\"([^\"]+)\".*", "$1");
+        } catch (Exception e) {
+            log.debug("Could not extract JsonProperty value from: {}", annotation);
+            return null;
+        }
     }
 
     private boolean isCollectionType(String qualifiedName) {
@@ -599,5 +588,301 @@ public class TypeResolver {
         return type.equals("String") || type.equals("Integer") || 
                type.equals("Long") || type.equals("Double") || 
                type.equals("Boolean") || type.equals("Float");
+    }
+
+    private boolean hasJpaRelationAnnotation(FieldDeclaration field) {
+        return field.getAnnotations().stream()
+            .anyMatch(a -> {
+                String name = a.getNameAsString();
+                return name.equals("OneToMany") || 
+                       name.equals("ManyToOne") || 
+                       name.equals("OneToOne") || 
+                       name.equals("ManyToMany") ||
+                       name.equals("javax.persistence.OneToMany") ||
+                       name.equals("javax.persistence.ManyToOne") ||
+                       name.equals("javax.persistence.OneToOne") ||
+                       name.equals("javax.persistence.ManyToMany") ||
+                       name.equals("jakarta.persistence.OneToMany") ||
+                       name.equals("jakarta.persistence.ManyToOne") ||
+                       name.equals("jakarta.persistence.OneToOne") ||
+                       name.equals("jakarta.persistence.ManyToMany");
+            });
+    }
+
+    private Map<String, Object> createFieldDefinition(String type, boolean required) {
+        Map<String, Object> fieldDef = new LinkedHashMap<>();  // Use LinkedHashMap to maintain order
+        fieldDef.put("type", type);
+        fieldDef.put("required", required);
+        return fieldDef;
+    }
+
+    private boolean hasJsonIgnoreProperties(ClassOrInterfaceDeclaration classDeclaration) {
+        // First check direct annotation on the class
+        if (classDeclaration.getAnnotations().stream()
+                .anyMatch(a -> {
+                    String name = a.getNameAsString();
+                    if (!name.equals("JsonIgnoreProperties") && 
+                        !name.equals("com.fasterxml.jackson.annotation.JsonIgnoreProperties")) {
+                        return false;
+                    }
+                    return a.toString().contains("ignoreUnknown = true") || 
+                           a.toString().contains("ignoreUnknown=true");
+                })) {
+            return true;
+        }
+        
+        // Then check if parent classes have this annotation
+        if (classDeclaration.getExtendedTypes().isNonEmpty()) {
+            try {
+                String parentClassName = classDeclaration.getExtendedTypes().get(0).getNameAsString();
+                Optional<ClassOrInterfaceDeclaration> parentClass = findClass(parentClassName);
+                if (parentClass.isPresent()) {
+                    return hasJsonIgnoreProperties(parentClass.get());
+                }
+            } catch (Exception e) {
+                log.debug("Could not check parent class for JsonIgnoreProperties: {}", e.getMessage());
+            }
+        }
+        
+        return false;
+    }
+
+    public Map<String, Object> resolveRequestBody(Type type) {
+        if (type == null) {
+            return null;
+        }
+
+        try {
+            return resolveRequestFields(type.resolve());
+        } catch (Exception e) {
+            log.warn("Could not resolve request type: {}", type, e.getMessage());
+            return null;
+        }
+    }
+
+    public Map<String, Object> resolveResponseBody(Type type) {
+        if (type == null) {
+            return null;
+        }
+
+        try {
+            return resolveResponseFields(type.resolve());
+        } catch (Exception e) {
+            log.warn("Could not resolve response type: {}", type, e.getMessage());
+            return null;
+        }
+    }
+
+    private Map<String, Object> resolveRequestFields(ResolvedType resolvedType) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        
+        // Get class declaration
+        Optional<ClassOrInterfaceDeclaration> classDecl = findClass(resolvedType.describe());
+        if (classDecl.isEmpty()) {
+            return null;
+        }
+
+        // Check for @JsonIgnoreProperties at class level
+        boolean ignoreUnknown = hasJsonIgnoreProperties(classDecl.get());
+        if (ignoreUnknown) {
+            result.put("ignoreUnknown", true);
+        }
+
+        // Add items object
+        Map<String, Object> items = new LinkedHashMap<>();
+        result.put("items", items);
+
+        // Process fields
+        extractRequestFields(classDecl.get(), items);
+
+        return result;
+    }
+
+    private Map<String, Object> resolveResponseFields(ResolvedType resolvedType) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        
+        // Get class declaration
+        Optional<ClassOrInterfaceDeclaration> classDecl = findClass(resolvedType.describe());
+        if (classDecl.isEmpty()) {
+            return null;
+        }
+
+        // Add items object
+        Map<String, Object> items = new LinkedHashMap<>();
+        result.put("items", items);
+
+        // Process fields
+        extractResponseFields(classDecl.get(), items);
+
+        return result;
+    }
+
+    private void extractRequestFields(ClassOrInterfaceDeclaration classDeclaration, Map<String, Object> fields) {
+        for (FieldDeclaration field : classDeclaration.getFields()) {
+            // Skip fields with @JsonIgnore or JPA relations
+            if (hasAnnotation(field, "JsonIgnore") || hasJpaRelationAnnotation(field)) {
+                continue;
+            }
+
+            // Get field name from @JsonProperty if present
+            String fieldName = field.getAnnotations().stream()
+                .filter(a -> a.getNameAsString().equals("JsonProperty"))
+                .findFirst()
+                .map(this::getJsonPropertyValue)
+                .orElse(field.getVariable(0).getNameAsString());
+
+            Type fieldType = field.getVariable(0).getType();
+            
+            try {
+                ResolvedType resolvedType = fieldType.resolve();
+                String qualifiedName = resolvedType.describe();
+                boolean isRequired = hasRequiredAnnotation(field);
+
+                if (isCollectionType(qualifiedName)) {
+                    Map<String, Object> collectionType = handleRequestCollectionType(resolvedType);
+                    if (collectionType != null) {
+                        collectionType.put("required", isRequired);
+                        fields.put(fieldName, collectionType);
+                    }
+                } else if (isJavaType(qualifiedName)) {
+                    fields.put(fieldName, createFieldDefinition(normalizeType(resolvedType.describe()), isRequired));
+                } else {
+                    Map<String, Object> customType = resolveRequestFields(resolvedType);
+                    if (customType != null) {
+                        Map<String, Object> fieldDef = new LinkedHashMap<>();
+                        fieldDef.put("type", normalizeType(resolvedType.describe()));
+                        fieldDef.put("required", isRequired);
+                        if (customType.containsKey("ignoreUnknown")) {
+                            fieldDef.put("ignoreUnknown", customType.get("ignoreUnknown"));
+                        }
+                        if (customType.containsKey("items")) {
+                            fieldDef.put("items", customType.get("items"));
+                        }
+                        fields.put(fieldName, fieldDef);
+                    } else {
+                        fields.put(fieldName, createFieldDefinition(normalizeType(fieldType.asString()), isRequired));
+                    }
+                }
+            } catch (Exception e) {
+                fields.put(fieldName, createFieldDefinition(normalizeType(fieldType.asString()), false));
+            }
+        }
+    }
+
+    private void extractResponseFields(ClassOrInterfaceDeclaration classDeclaration, Map<String, Object> fields) {
+        for (FieldDeclaration field : classDeclaration.getFields()) {
+            // Skip fields with @JsonIgnore or JPA relations
+            if (hasAnnotation(field, "JsonIgnore") || hasJpaRelationAnnotation(field)) {
+                continue;
+            }
+
+            // Get field name from @JsonProperty if present
+            String fieldName = field.getAnnotations().stream()
+                .filter(a -> a.getNameAsString().equals("JsonProperty"))
+                .findFirst()
+                .map(this::getJsonPropertyValue)
+                .orElse(field.getVariable(0).getNameAsString());
+
+            Type fieldType = field.getVariable(0).getType();
+            
+            try {
+                ResolvedType resolvedType = fieldType.resolve();
+                String qualifiedName = resolvedType.describe();
+
+                if (isCollectionType(qualifiedName)) {
+                    Map<String, Object> collectionType = handleResponseCollectionType(resolvedType);
+                    fields.put(fieldName, collectionType);
+                } else if (isJavaType(qualifiedName)) {
+                    fields.put(fieldName, Map.of("type", normalizeType(resolvedType.describe())));
+                } else {
+                    Map<String, Object> customType = resolveResponseFields(resolvedType);
+                    fields.put(fieldName, customType != null ? 
+                            customType : 
+                            Map.of("type", normalizeType(fieldType.asString())));
+                }
+            } catch (Exception e) {
+                fields.put(fieldName, Map.of("type", normalizeType(fieldType.asString())));
+            }
+        }
+    }
+
+    private Map<String, Object> handleRequestCollectionType(ResolvedType type) {
+        try {
+            String typeName = type.describe();
+            if (!typeName.contains("<")) {
+                return Map.of("type", "array");
+            }
+
+            String genericTypeName = typeName.substring(typeName.indexOf('<') + 1, typeName.lastIndexOf('>'));
+            
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("type", "array");
+
+            // For complex types, try to resolve their fields
+            try {
+                Optional<ClassOrInterfaceDeclaration> dtoClass = findClass(genericTypeName);
+                if (dtoClass.isPresent()) {
+                    // Check for @JsonIgnoreProperties at class level
+                    boolean ignoreUnknown = hasJsonIgnoreProperties(dtoClass.get());
+                    if (ignoreUnknown) {
+                        result.put("ignoreUnknown", true);
+                    }
+
+                    // Get the fields without wrapping in another "items" object
+                    Map<String, Object> itemFields = new LinkedHashMap<>();
+                    extractRequestFields(dtoClass.get(), itemFields);
+                    
+                    if (!itemFields.isEmpty()) {
+                        result.put("items", itemFields);
+                        return result;
+                    }
+                }
+            } catch (Exception e) {
+                log.debug("Could not resolve collection item type {}: {}", genericTypeName, e.getMessage());
+            }
+
+            result.put("items", Map.of("type", genericTypeName));
+            return result;
+
+        } catch (Exception e) {
+            log.debug("Could not resolve collection type {}: {}", type, e.getMessage());
+            return Map.of("type", "array");
+        }
+    }
+
+    private Map<String, Object> handleResponseCollectionType(ResolvedType type) {
+        try {
+            String typeName = type.describe();
+            if (!typeName.contains("<")) {
+                return Map.of("type", "array");
+            }
+
+            String genericTypeName = typeName.substring(typeName.indexOf('<') + 1, typeName.lastIndexOf('>'));
+            
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("type", "array");
+
+            // For complex types, try to resolve their fields
+            try {
+                Optional<ClassOrInterfaceDeclaration> dtoClass = findClass(genericTypeName);
+                if (dtoClass.isPresent()) {
+                    Map<String, Object> itemFields = new LinkedHashMap<>();
+                    extractResponseFields(dtoClass.get(), itemFields);
+                    if (!itemFields.isEmpty()) {
+                        result.put("items", itemFields);
+                        return result;
+                    }
+                }
+            } catch (Exception e) {
+                log.debug("Could not resolve collection item type {}: {}", genericTypeName, e.getMessage());
+            }
+
+            result.put("items", Map.of("type", genericTypeName));
+            return result;
+
+        } catch (Exception e) {
+            log.debug("Could not resolve collection type {}: {}", type, e.getMessage());
+            return Map.of("type", "array");
+        }
     }
 } 
