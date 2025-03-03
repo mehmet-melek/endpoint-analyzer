@@ -647,13 +647,13 @@ public class TypeResolver {
         return false;
     }
 
-    public Map<String, Object> resolveRequestBody(Type type) {
+    public Map<String, Object> resolveRequestBody(Type type, boolean isValidated) {
         if (type == null) {
             return null;
         }
 
         try {
-            return resolveRequestFields(type.resolve());
+            return resolveRequestFields(type.resolve(), isValidated);
         } catch (Exception e) {
             log.warn("Could not resolve request type: {}", type, e.getMessage());
             return null;
@@ -673,7 +673,7 @@ public class TypeResolver {
         }
     }
 
-    private Map<String, Object> resolveRequestFields(ResolvedType resolvedType) {
+    private Map<String, Object> resolveRequestFields(ResolvedType resolvedType, boolean isValidated) {
         Map<String, Object> result = new LinkedHashMap<>();
         
         // Get class declaration
@@ -682,10 +682,13 @@ public class TypeResolver {
             return null;
         }
 
-        // Check for @JsonIgnoreProperties at class level
-        boolean ignoreUnknown = hasJsonIgnoreProperties(classDecl.get());
-        if (ignoreUnknown) {
-            result.put("ignoreUnknown", true);
+        // Check for @JsonIgnoreProperties at class level if validated
+        if (isValidated) {
+            boolean ignoreUnknown = hasJsonIgnoreProperties(classDecl.get());
+            result.put("ignoreUnknown", ignoreUnknown);
+        } else {
+            // If not validated, always set ignoreUnknown to false
+            result.put("ignoreUnknown", false);
         }
 
         // Add items object
@@ -693,7 +696,7 @@ public class TypeResolver {
         result.put("items", items);
 
         // Process fields
-        extractRequestFields(classDecl.get(), items);
+        extractRequestFields(classDecl.get(), items, isValidated);
 
         return result;
     }
@@ -717,7 +720,7 @@ public class TypeResolver {
         return result;
     }
 
-    private void extractRequestFields(ClassOrInterfaceDeclaration classDeclaration, Map<String, Object> fields) {
+    private void extractRequestFields(ClassOrInterfaceDeclaration classDeclaration, Map<String, Object> fields, boolean isValidated) {
         for (FieldDeclaration field : classDeclaration.getFields()) {
             // Skip fields with @JsonIgnore or JPA relations
             if (hasAnnotation(field, "JsonIgnore") || hasJpaRelationAnnotation(field)) {
@@ -736,10 +739,12 @@ public class TypeResolver {
             try {
                 ResolvedType resolvedType = fieldType.resolve();
                 String qualifiedName = resolvedType.describe();
-                boolean isRequired = hasRequiredAnnotation(field);
+                
+                // Check for required annotations only if validated
+                boolean isRequired = isValidated && hasRequiredAnnotation(field);
 
                 if (isCollectionType(qualifiedName)) {
-                    Map<String, Object> collectionType = handleRequestCollectionType(resolvedType);
+                    Map<String, Object> collectionType = handleRequestCollectionType(resolvedType, isValidated);
                     if (collectionType != null) {
                         collectionType.put("required", isRequired);
                         fields.put(fieldName, collectionType);
@@ -747,7 +752,7 @@ public class TypeResolver {
                 } else if (isJavaType(qualifiedName)) {
                     fields.put(fieldName, createFieldDefinition(normalizeType(resolvedType.describe()), isRequired));
                 } else {
-                    Map<String, Object> customType = resolveRequestFields(resolvedType);
+                    Map<String, Object> customType = resolveRequestFields(resolvedType, isValidated);
                     if (customType != null) {
                         Map<String, Object> fieldDef = new LinkedHashMap<>();
                         fieldDef.put("type", normalizeType(resolvedType.describe()));
@@ -806,7 +811,7 @@ public class TypeResolver {
         }
     }
 
-    private Map<String, Object> handleRequestCollectionType(ResolvedType type) {
+    private Map<String, Object> handleRequestCollectionType(ResolvedType type, boolean isValidated) {
         try {
             String typeName = type.describe();
             if (!typeName.contains("<")) {
@@ -823,14 +828,17 @@ public class TypeResolver {
                 Optional<ClassOrInterfaceDeclaration> dtoClass = findClass(genericTypeName);
                 if (dtoClass.isPresent()) {
                     // Check for @JsonIgnoreProperties at class level
-                    boolean ignoreUnknown = hasJsonIgnoreProperties(dtoClass.get());
-                    if (ignoreUnknown) {
-                        result.put("ignoreUnknown", true);
+                    if (isValidated) {
+                        boolean ignoreUnknown = hasJsonIgnoreProperties(dtoClass.get());
+                        result.put("ignoreUnknown", ignoreUnknown);
+                    } else {
+                        // If not validated, always set ignoreUnknown to false
+                        result.put("ignoreUnknown", false);
                     }
 
                     // Get the fields without wrapping in another "items" object
                     Map<String, Object> itemFields = new LinkedHashMap<>();
-                    extractRequestFields(dtoClass.get(), itemFields);
+                    extractRequestFields(dtoClass.get(), itemFields, isValidated);
                     
                     if (!itemFields.isEmpty()) {
                         result.put("items", itemFields);

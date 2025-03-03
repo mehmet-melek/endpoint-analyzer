@@ -209,8 +209,18 @@ public class FeignClientParser extends AbstractEndpointParser<ConsumedEndpoint> 
             return null;
         }
 
+        // Check if parameter has @Valid or @Validated annotation
+        boolean isValidated = requestBodyParam.get().getAnnotations().stream()
+                .anyMatch(a -> {
+                    String name = a.getNameAsString();
+                    return name.equals("Valid") || 
+                           name.equals("Validated") ||
+                           name.equals("javax.validation.Valid") ||
+                           name.equals("org.springframework.validation.annotation.Validated");
+                });
+
         Type paramType = requestBodyParam.get().getType();
-        return typeResolver.resolveRequestBody(paramType);
+        return typeResolver.resolveRequestBody(paramType, isValidated);
     }
 
     private Object parseResponseBody(MethodDeclaration method) {
