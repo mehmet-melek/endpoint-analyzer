@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonValue;
 import com.github.javaparser.ParserConfiguration;
 import com.github.javaparser.StaticJavaParser;
 import com.github.javaparser.ast.CompilationUnit;
+import com.github.javaparser.ast.NodeList;
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import com.github.javaparser.ast.body.FieldDeclaration;
 import com.github.javaparser.ast.expr.AnnotationExpr;
@@ -891,6 +892,57 @@ public class TypeResolver {
         } catch (Exception e) {
             log.debug("Could not resolve collection type {}: {}", type, e.getMessage());
             return Map.of("type", "array");
+        }
+    }
+
+    /**
+     * Resolve the generic type inside a ResponseEntity
+     */
+    public Map<String, Object> resolveResponseEntityType(Type type) {
+        try {
+            // Check if it's ResponseEntity<Void>
+            if (type.asString().contains("ResponseEntity<Void>") || 
+                type.asString().contains("ResponseEntity<java.lang.Void>")) {
+                return null;
+            }
+
+            // Extract the generic type from ResponseEntity<T>
+            Type genericType = null;
+            if (type.isClassOrInterfaceType()) {
+                Optional<Type> extractedType = type.asClassOrInterfaceType()
+                    .getTypeArguments()
+                    .orElse(new NodeList<>())
+                    .stream()
+                    .findFirst();
+                    
+                if (extractedType.isPresent()) {
+                    genericType = extractedType.get();
+                    
+                    // Check if generic type is void
+                    if (genericType.isVoidType() || 
+                        genericType.asString().equals("Void") || 
+                        genericType.asString().equals("java.lang.Void")) {
+                        return null;
+                    }
+                    
+                    // Resolve the generic type
+                    return resolveResponseBody(genericType);
+                }
+            }
+            
+            // If we couldn't extract the generic type or it's not a ClassOrInterfaceType
+            log.warn("Could not extract generic type from ResponseEntity: {}", type);
+            // Return an empty response body format
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("items", new LinkedHashMap<>());
+            return result;
+            
+        } catch (Exception e) {
+            log.warn("Error resolving ResponseEntity type {}: {}", type, e.getMessage());
+            // Return an empty response body format
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("items", new LinkedHashMap<>());
+            return result;
         }
     }
 } 

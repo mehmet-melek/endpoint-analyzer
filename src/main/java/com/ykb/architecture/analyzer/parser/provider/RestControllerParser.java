@@ -198,7 +198,15 @@ public class RestControllerParser extends AbstractEndpointParser<ApiCall> {
             return null;
         }
 
-        return typeResolver.resolveResponseBody(method.getType());
+        Type returnType = method.getType();
+        
+        // Special handling for ResponseEntity
+        if (returnType.asString().startsWith("ResponseEntity")) {
+            return typeResolver.resolveResponseEntityType(returnType);
+        }
+
+        // For all other types
+        return typeResolver.resolveResponseBody(returnType);
     }
 
     private Optional<Parameter> findRequestBodyParameter(MethodDeclaration method) {
