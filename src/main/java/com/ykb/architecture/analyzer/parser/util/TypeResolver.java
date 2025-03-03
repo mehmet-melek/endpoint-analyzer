@@ -106,11 +106,10 @@ public class TypeResolver {
         };
     }
 
-    private Map<String, Object> createUnresolvedType(String typeName, String reason) {
+    private Map<String, Object> createUnresolvedType(String reason) {
         Map<String, Object> unresolved = new LinkedHashMap<>();
         unresolved.put("_unresolved", true);
         unresolved.put("_reason", reason);
-        unresolved.put("type", typeName);
         return unresolved;
     }
 
@@ -121,14 +120,13 @@ public class TypeResolver {
      */
     public Map<String, Object> resolveFields(Type type) {
         if (type == null) {
-            return createUnresolvedType("null", "Type is null");
+            return createUnresolvedType("Type is null");
         }
 
         try {
             return resolveFields(type.resolve());
         } catch (Exception e) {
             return createUnresolvedType(
-                type.asString(),
                 "Failed to resolve type: " + e.getMessage()
             );
         }
@@ -664,10 +662,11 @@ public class TypeResolver {
         }
 
         try {
-            return resolveRequestFields(type.resolve(), isValidated);
+            ResolvedType resolvedType = type.resolve();
+            return resolveRequestFields(resolvedType, isValidated);
         } catch (Exception e) {
-            log.warn("Could not resolve request type: {}", type, e.getMessage());
-            return null;
+            log.warn("Could not resolve request type: {}", type);
+            return createUnresolvedType("Could not resolve type: " + type.asString());
         }
     }
 
@@ -677,10 +676,27 @@ public class TypeResolver {
         }
 
         try {
-            return resolveResponseFields(type.resolve());
+            // Special handling for ResponseEntity
+            if (type.asString().startsWith("ResponseEntity")) {
+                try {
+                    return resolveResponseEntityType(type);
+                } catch (Exception e) {
+                    log.warn("Could not resolve ResponseEntity type: {}", type);
+                    return createUnresolvedType("Could not resolve ResponseEntity type: " + type.asString());
+                }
+            }
+
+            // For all other types
+            try {
+                ResolvedType resolvedType = type.resolve();
+                return resolveResponseFields(resolvedType);
+            } catch (Exception e) {
+                log.warn("Could not resolve response type: {}", type);
+                return createUnresolvedType("Could not resolve type: " + type.asString());
+            }
         } catch (Exception e) {
-            log.warn("Could not resolve response type: {}", type, e.getMessage());
-            return null;
+            log.warn("Error resolving response type: {}", type);
+            return createUnresolvedType("Error resolving type: " + type.asString());
         }
     }
 
@@ -940,19 +956,13 @@ public class TypeResolver {
                 }
             }
             
-            // If we couldn't extract the generic type or it's not a ClassOrInterfaceType
+            // If we couldn't extract the generic type
             log.warn("Could not extract generic type from ResponseEntity: {}", type);
-            // Return an empty response body format
-            Map<String, Object> result = new LinkedHashMap<>();
-            result.put("items", new LinkedHashMap<>());
-            return result;
+            return createUnresolvedType("Could not extract generic type from ResponseEntity: " + type.asString());
             
         } catch (Exception e) {
             log.warn("Error resolving ResponseEntity type {}: {}", type, e.getMessage());
-            // Return an empty response body format
-            Map<String, Object> result = new LinkedHashMap<>();
-            result.put("items", new LinkedHashMap<>());
-            return result;
+            return createUnresolvedType("Error resolving ResponseEntity type: " + type.asString());
         }
     }
 } 
