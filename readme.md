@@ -1,8 +1,39 @@
-# Endpoint Analyzer
-
-Bu araç, Java Spring projeleri için REST endpoint'lerini ve Feign client çağrılarını analiz eder.
-
-## Kapsam
+Mimari Analizi Aracı - TypeResolver İyileştirmeleri
+Bu doküman, mikro servis mimarisindeki API çağrılarını analiz eden ve raporlayan aracımızın TypeResolver bileşenine yapılan iyileştirmeleri özetlemektedir.
+RequestBody ve ResponseBody Analizleri
+RequestBody ve ResponseBody için farklı işleme mantıkları uyguladık. Her biri için ayrı metotlar oluşturuldu:
+resolveRequestBody(Type type, boolean isValidated)
+resolveResponseBody(Type type)
+RequestBody Kontrolleri
+RequestBody için aşağıdaki kontroller uygulanmaktadır:
+@JsonIgnoreProperties(ignoreUnknown = true) Kontrolü:
+DTO sınıfları üzerinde bu annotation varsa "ignoreUnknown": true olarak işaretlenir
+Miras alınan sınıflarda (örn: UserDto extends HighDto) da bu kontrol yapılır
+@Valid veya @Validated yoksa her zaman "ignoreUnknown": false olarak işaretlenir
+İç içe nesnelerde (DTO içinde başka bir DTO) de bu kontrol yapılır
+Required Kontrolü:
+Bir field üzerinde @NotNull, @NotEmpty veya @NotBlank annotation'larından biri varsa, "required": true olarak işaretlenir
+Bu kontroller sadece controller metodu üzerinde @Valid veya @Validated varsa etkinleştirilir
+@Valid veya @Validated yoksa, tüm field'lar için "required": false olarak işaretlenir
+@JsonIgnore Kontrolü:
+Bir field üzerinde @JsonIgnore annotation'ı varsa, bu field JSON çıktısında gösterilmez
+@JsonProperty Kontrolü:
+Bir field üzerinde @JsonProperty("user_names") gibi bir annotation varsa, field adı olarak bu değer kullanılır
+JPA İlişki Kontrolü:
+@OneToMany, @ManyToOne, @OneToOne, @ManyToMany gibi JPA ilişki annotation'ları olan field'lar JSON çıktısında gösterilmez
+Bu kontrol hem javax.persistence hem de jakarta.persistence paketleri için yapılır
+Collection Tipleri:
+Collection tipleri için (List, Set vb.) "type": "array" olarak işaretlenir
+Collection içindeki nesneler için de yukarıdaki tüm kontroller uygulanır
+Collection içindeki DTO'lar için ignoreUnknown ve required kontrolleri ayrıca yapılır
+ResponseBody Kontrolleri
+ResponseBody için sadece minimum bilgi sunulur:
+@JsonIgnore Kontrolü:
+Bir field üzerinde @JsonIgnore annotation'ı varsa, bu field JSON çıktısında gösterilmez
+@JsonProperty Kontrolü:
+Bir field üzerinde @JsonProperty("user_names") gibi bir annotation varsa, field adı olarak bu değer kullanılır
+JPA İlişki Kontrolü:
+JPA ilişki annotation'ları olan field'lar JSON çıktısında gösterilmez
 
 ### Type Resolution
 - **Primitive Types**: Java primitive tipleri ve wrapper sınıfları (`int`, `long`, `String` vb.)
@@ -126,3 +157,63 @@ Bu araç, Java Spring projeleri için REST endpoint'lerini ve Feign client çağ
   - HTTP/HTTPS URL kontrolü
   - Domain name extraction
   - Path parametrelerinin temizlenmesi
+
+### RequestBody Örneği
+
+```json
+"requestBody": {
+  "ignoreUnknown": true,  // @JsonIgnoreProperties(ignoreUnknown = true) + @Valid/@Validated
+  "items": {
+    "id": {
+      "type": "Long",
+      "required": false
+    },
+    "user_names": {  // @JsonProperty("user_names")
+      "type": "String",
+      "required": true  // @NotNull + @Valid/@Validated
+    },
+    "detailDtoList": {
+      "ignoreUnknown": true,  // DetailDto içinde @JsonIgnoreProperties(ignoreUnknown = true) + @Valid/@Validated
+      "type": "array",
+      "required": true,  // @NotNull + @Valid/@Validated
+      "items": {
+        "id": {
+          "type": "Long",
+          "required": false
+        },
+        "status": {
+          "type": "String",
+          "required": false
+        }
+      }
+    }
+  }
+}
+```
+
+### ResponseBody Örneği
+
+```json
+"responseBody": {
+  "items": {
+    "id": {
+      "type": "Long"
+    },
+    "orderDate": {
+      "type": "String"
+    },
+    "status": {
+      "type": "String"
+    }
+  }
+}
+```
+
+## Önemli Noktalar
+
+1. Miras alınan özelliklerin düzgün işlenmesi için parent sınıflar da analiz edilir
+2. Field'ların tam paket adları ile kullanılan annotation'lar (örn: javax.validation.Valid) da kontrol edilir
+3. @Valid veya @Validated yoksa bile ignoreUnknown değeri mutlaka false olarak belirtilir
+4. Collection tipleri recursive olarak çözümlenir ve içindeki tiplerin özellikleri doğru şekilde raporlanır
+
+Bu şekilde API dokümantasyonu için daha eksiksiz ve doğru JSON şemaları oluşturulabilir.
