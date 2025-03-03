@@ -251,7 +251,7 @@ public class FeignClientParser extends AbstractEndpointParser<ConsumedEndpoint> 
     }
 
     private String extractOrganizationName(String clientName) {
-        if (clientName.startsWith("http") || !clientName.contains(".")) {
+        if (clientName.startsWith("http") || !clientName.startsWith("${") || !clientName.contains(".")) {
             return "unknown";
         }
         
@@ -264,7 +264,7 @@ public class FeignClientParser extends AbstractEndpointParser<ConsumedEndpoint> 
     }
 
     private String extractProductName(String clientName) {
-        if (clientName.startsWith("http") || !clientName.contains(".")) {
+        if (clientName.startsWith("http") || !clientName.startsWith("${") || !clientName.contains(".")) {
             return "unknown";
         }
         
