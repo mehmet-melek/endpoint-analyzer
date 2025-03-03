@@ -13,7 +13,7 @@ public class ApiCall {
     @JsonProperty("path")
     private String fullPath;
     private Map<String, String> pathVariables;
-    private Map<String, String> queryParameters;
+    private Map<String, ?> queryParameters;
     private Object requestBody;
     private Object responseBody;
 } 

@@ -160,16 +160,81 @@ public class RestControllerParser extends AbstractEndpointParser<ApiCall> {
         return pathVariables.isEmpty() ? null : pathVariables;
     }
 
-    private Map<String, String> parseQueryParameters(MethodDeclaration method) {
-        Map<String, String> queryParams = new HashMap<>();
+    private Map<String, Object> parseQueryParameters(MethodDeclaration method) {
+        Map<String, Object> queryParams = new HashMap<>();
         method.getParameters().stream()
                 .filter(p -> AnnotationParser.hasAnnotation(p, "RequestParam"))
                 .forEach(p -> {
+                    // First try 'value' attribute, then 'name' attribute for parameter name
                     String name = AnnotationParser.getAnnotationValue(p, "RequestParam", "value")
+                            .or(() -> AnnotationParser.getAnnotationValue(p, "RequestParam", "name"))
                             .orElse(p.getNameAsString());
-                    queryParams.put(name, p.getTypeAsString());
+
+                    // Check if parameter is required
+                    boolean isRequired = isRequiredQueryParameter(method, p);
+
+                    Map<String, Object> parameterInfo = new LinkedHashMap<>();
+                    parameterInfo.put("type", p.getTypeAsString());
+                    parameterInfo.put("required", isRequired);
+                    
+                    queryParams.put(name, parameterInfo);
                 });
         return queryParams.isEmpty() ? null : queryParams;
+    }
+
+    /**
+     * Determines if a query parameter is required based on annotations and validation context.
+     */
+    private boolean isRequiredQueryParameter(MethodDeclaration method, Parameter parameter) {
+        // 1. Check @RequestParam(required = true)
+        Optional<String> requiredValue = AnnotationParser.getAnnotationValue(parameter, "RequestParam", "required");
+        if (requiredValue.isPresent() && requiredValue.get().equals("true")) {
+            return true;
+        }
+
+        // Check if parameter has validation annotations
+        boolean hasValidationAnnotation = hasRequiredValidationAnnotation(parameter);
+        if (!hasValidationAnnotation) {
+            return false;
+        }
+
+        // 2. Check class level @Valid or @Validated
+        ClassOrInterfaceDeclaration classDeclaration = method.findAncestor(ClassOrInterfaceDeclaration.class).orElse(null);
+        if (classDeclaration != null && 
+            (AnnotationParser.hasAnnotation(classDeclaration, "Valid") || 
+             AnnotationParser.hasAnnotation(classDeclaration, "Validated"))) {
+            return true;
+        }
+
+        // 3. Check method level @Valid or @Validated
+        if (AnnotationParser.hasAnnotation(method, "Valid") || 
+            AnnotationParser.hasAnnotation(method, "Validated")) {
+            return true;
+        }
+
+        // 4. Check parameter level @Valid or @Validated
+        if (AnnotationParser.hasAnnotation(parameter, "Valid") || 
+            AnnotationParser.hasAnnotation(parameter, "Validated")) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Checks if parameter has any of the required validation annotations
+     */
+    private boolean hasRequiredValidationAnnotation(Parameter parameter) {
+        return parameter.getAnnotations().stream()
+                .anyMatch(a -> {
+                    String name = a.getNameAsString();
+                    return name.equals("NotNull") || 
+                           name.equals("NotEmpty") || 
+                           name.equals("NotBlank") ||
+                           name.equals("javax.validation.constraints.NotNull") ||
+                           name.equals("javax.validation.constraints.NotEmpty") ||
+                           name.equals("javax.validation.constraints.NotBlank");
+                });
     }
 
     private Object parseRequestBody(MethodDeclaration method) {

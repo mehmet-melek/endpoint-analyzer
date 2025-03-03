@@ -106,6 +106,14 @@ public class TypeResolver {
         };
     }
 
+    private Map<String, Object> createUnresolvedType(String typeName, String reason) {
+        Map<String, Object> unresolved = new LinkedHashMap<>();
+        unresolved.put("_unresolved", true);
+        unresolved.put("_reason", reason);
+        unresolved.put("type", typeName);
+        return unresolved;
+    }
+
     /**
      * Resolves fields of a given type into a map representation.
      * @param type The Java type to resolve
@@ -113,14 +121,16 @@ public class TypeResolver {
      */
     public Map<String, Object> resolveFields(Type type) {
         if (type == null) {
-            return null;
+            return createUnresolvedType("null", "Type is null");
         }
 
         try {
             return resolveFields(type.resolve());
         } catch (Exception e) {
-            log.warn("Could not resolve type: {}, error: {}", type, e.getMessage());
-            return createFieldDefinition(normalizeType(type.asString()), false);
+            return createUnresolvedType(
+                type.asString(),
+                "Failed to resolve type: " + e.getMessage()
+            );
         }
     }
 

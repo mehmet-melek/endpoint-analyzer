@@ -196,8 +196,12 @@ public class FeignClientParser extends AbstractEndpointParser<ConsumedEndpoint> 
         method.getParameters().stream()
                 .filter(p -> AnnotationParser.hasAnnotation(p, "RequestParam"))
                 .forEach(p -> {
+                    // First try 'value' attribute, then 'name' attribute for parameter name
                     String name = AnnotationParser.getAnnotationValue(p, "RequestParam", "value")
+                            .or(() -> AnnotationParser.getAnnotationValue(p, "RequestParam", "name"))
                             .orElse(p.getNameAsString());
+                    
+                    // For Feign clients, just add parameter name and type
                     queryParams.put(name, p.getTypeAsString());
                 });
         return queryParams.isEmpty() ? null : queryParams;
