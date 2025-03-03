@@ -14,7 +14,9 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Stream;
 
 @Slf4j
@@ -76,9 +78,27 @@ public class AnalyzerService {
     }
 
     private ServiceReport buildServiceReport(List<ApiCall> providedEndpoints, List<ConsumedEndpoint> consumedEndpoints) {
+        // Group consumed endpoints by client name and merge their API calls
+        Map<String, ConsumedEndpoint> mergedEndpoints = new HashMap<>();
+        
+        for (ConsumedEndpoint endpoint : consumedEndpoints) {
+            String clientKey = endpoint.getClientApplicationName();
+            
+            if (mergedEndpoints.containsKey(clientKey)) {
+                // Add API calls to existing endpoint
+                ConsumedEndpoint existing = mergedEndpoints.get(clientKey);
+                List<ApiCall> mergedCalls = new ArrayList<>(existing.getApiCalls());
+                mergedCalls.addAll(endpoint.getApiCalls());
+                existing.setApiCalls(mergedCalls);
+            } else {
+                // Create new endpoint
+                mergedEndpoints.put(clientKey, endpoint);
+            }
+        }
+
         return ServiceReport.builder()
                 .providedEndpoints(providedEndpoints)
-                .consumedEndpoints(consumedEndpoints)
+                .consumedEndpoints(new ArrayList<>(mergedEndpoints.values()))
                 .build();
     }
 
