@@ -1,0 +1,90 @@
+{
+  "providedEndpoints": [
+    {
+      "httpMethod": "POST",
+      "pathVariables": null,
+      "queryParameters": null,
+      "requestBody": {
+        "ignoreUnknown": false,
+        "items": {
+          "orderId": {
+            "type": "Long",
+            "required": true
+          },
+          "amount": {
+            "type": "BigDecimal",
+            "required": true
+          },
+          "paymentMethod": {
+            "type": "String",
+            "required": true
+          },
+          "cardDetails": {
+            "type": "array",
+            "ignoreUnknown": true,
+            "items": {
+              "cardNumber": {
+                "type": "String",
+                "required": true
+              },
+              "expiryDate": {
+                "type": "String",
+                "required": true
+              },
+              "cvv": {
+                "type": "String",
+                "required": true
+              }
+            },
+            "required": false
+          }
+        }
+      },
+      "responseBody": {
+        "items": {
+          "paymentId": {
+            "type": "String"
+          },
+          "status": {
+            "type": "String"
+          },
+          "transactionDate": {
+            "type": "LocalDateTime"
+          }
+        }
+      },
+      "path": "/payments"
+    }
+  ],
+  "consumedEndpoints": [
+    {
+      "apiCalls": [
+        {
+          "httpMethod": "GET",
+          "pathVariables": {
+            "orderId": "Long"
+          },
+          "queryParameters": null,
+          "requestBody": null,
+          "responseBody": {
+            "items": {
+              "orderId": {
+                "type": "Long"
+              },
+              "totalAmount": {
+                "type": "BigDecimal"
+              },
+              "orderDate": {
+                "type": "LocalDateTime"
+              }
+            }
+          },
+          "path": "/orders/{orderId}"
+        }
+      ],
+      "clientOrganizationName": "ORGANIZATION_ORDER",
+      "clientProductName": "ORGANIZATION_ORDER.PRODUCT_ORDER",
+      "clientApplicationName": "ORGANIZATION_ORDER.PRODUCT_ORDER.orderService"
+    }
+  ]
+}

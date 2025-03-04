@@ -1,0 +1,136 @@
+{
+  "providedEndpoints": [
+    {
+      "httpMethod": "POST",
+      "pathVariables": null,
+      "queryParameters": null,
+      "requestBody": {
+        "ignoreUnknown": false,
+        "items": {
+          "id": {
+            "type": "String",
+            "required": false
+          },
+          "name": {
+            "type": "String",
+            "required": true
+          },
+          "email": {
+            "type": "String",
+            "required": true
+          },
+          "addresses": {
+            "type": "array",
+            "ignoreUnknown": true,
+            "items": {
+              "street": {
+                "type": "String",
+                "required": true
+              },
+              "city": {
+                "type": "String",
+                "required": true
+              },
+              "country": {
+                "type": "String",
+                "required": true
+              }
+            },
+            "required": false
+          }
+        }
+      },
+      "responseBody": null,
+      "path": "/customers"
+    },
+    {
+      "httpMethod": "GET",
+      "pathVariables": {
+        "customerId": "String"
+      },
+      "queryParameters": null,
+      "requestBody": null,
+      "responseBody": {
+        "items": {
+          "id": {
+            "type": "String"
+          },
+          "name": {
+            "type": "String"
+          },
+          "email": {
+            "type": "String"
+          },
+          "addresses": {
+            "type": "array",
+            "items": {
+              "street": {
+                "type": "String"
+              },
+              "city": {
+                "type": "String"
+              },
+              "country": {
+                "type": "String"
+              }
+            }
+          }
+        }
+      },
+      "path": "/customers/{customerId}"
+    }
+  ],
+  "consumedEndpoints": [
+    {
+      "apiCalls": [
+        {
+          "httpMethod": "GET",
+          "pathVariables": {
+            "customerId": "String"
+          },
+          "queryParameters": null,
+          "requestBody": null,
+          "responseBody": {
+            "items": {
+              "orderId": {
+                "type": "Long"
+              },
+              "orderDate": {
+                "type": "LocalDateTime"
+              },
+              "totalAmount": {
+                "type": "BigDecimal"
+              }
+            }
+          },
+          "path": "/orders/customer/{customerId}"
+        },
+        {
+          "httpMethod": "DELETE",
+          "pathVariables": {
+            "customerId": "String"
+          },
+          "queryParameters": null,
+          "requestBody": null,
+          "responseBody": {
+            "items": {
+              "orderId": {
+                "type": "Long"
+              },
+              "orderDate": {
+                "type": "LocalDateTime"
+              },
+              "totalAmount": {
+                "type": "BigDecimal"
+              }
+            }
+          },
+          "path": "/orders/customer/{customerId}"
+        }
+      ],
+      "clientOrganizationName": "ORGANIZATION_ORDER",
+      "clientProductName": "ORGANIZATION_ORDER.PRODUCT_ORDER",
+      "clientApplicationName": "ORGANIZATION_ORDER.PRODUCT_ORDER.orderService"
+    }
+  ]
+}

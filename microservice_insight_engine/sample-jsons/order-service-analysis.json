@@ -1,0 +1,148 @@
+{
+  "providedEndpoints": [
+    {
+      "httpMethod": "POST",
+      "pathVariables": null,
+      "queryParameters": {
+        "customerId": {
+          "type": "String",
+          "required": true
+        }
+      },
+      "requestBody": {
+        "ignoreUnknown": false,
+        "items": {
+          "orderId": {
+            "type": "Long",
+            "required": false
+          },
+          "orderDate": {
+            "type": "LocalDateTime",
+            "required": true
+          },
+          "totalAmount": {
+            "type": "BigDecimal",
+            "required": true
+          },
+          "orderItems": {
+            "type": "array",
+            "ignoreUnknown": true,
+            "items": {
+              "productId": {
+                "type": "Long",
+                "required": true
+              },
+              "quantity": {
+                "type": "Integer",
+                "required": true
+              },
+              "price": {
+                "type": "BigDecimal",
+                "required": true
+              }
+            },
+            "required": true
+          }
+        }
+      },
+      "responseBody": null,
+      "path": "/orders"
+    },
+    {
+      "httpMethod": "GET",
+      "pathVariables": {
+        "orderId": "Long"
+      },
+      "queryParameters": null,
+      "requestBody": null,
+      "responseBody": {
+        "items": {
+          "orderId": {
+            "type": "Long"
+          },
+          "orderDate": {
+            "type": "LocalDateTime"
+          },
+          "totalAmount": {
+            "type": "BigDecimal"
+          },
+          "orderItems": {
+            "type": "array",
+            "items": {
+              "productId": {
+                "type": "Long"
+              },
+              "quantity": {
+                "type": "Integer"
+              },
+              "price": {
+                "type": "BigDecimal"
+              }
+            }
+          }
+        }
+      },
+      "path": "/orders/{orderId}"
+    }
+  ],
+  "consumedEndpoints": [
+    {
+      "apiCalls": [
+        {
+          "httpMethod": "GET",
+          "pathVariables": {
+            "customerId": "String"
+          },
+          "queryParameters": null,
+          "requestBody": null,
+          "responseBody": {
+            "items": {
+              "id": {
+                "type": "String"
+              },
+              "name": {
+                "type": "String"
+              },
+              "email": {
+                "type": "String"
+              }
+            }
+          },
+          "path": "/customers/{customerId}"
+        }
+      ],
+      "clientOrganizationName": "ORGANIZATION",
+      "clientProductName": "ORGANIZATION.PRODUCT",
+      "clientApplicationName": "ORGANIZATION.PRODUCT.customerService"
+    },
+    {
+      "apiCalls": [
+        {
+          "httpMethod": "GET",
+          "pathVariables": {
+            "productId": "Long"
+          },
+          "queryParameters": null,
+          "requestBody": null,
+          "responseBody": {
+            "items": {
+              "id": {
+                "type": "Long"
+              },
+              "name": {
+                "type": "String"
+              },
+              "price": {
+                "type": "BigDecimal"
+              }
+            }
+          },
+          "path": "/products/{productId}"
+        }
+      ],
+      "clientOrganizationName": "ORGANIZATION_PRODUCT",
+      "clientProductName": "ORGANIZATION_PRODUCT.PRODUCT_PRODUCT",
+      "clientApplicationName": "ORGANIZATION_PRODUCT.PRODUCT_PRODUCT.productService"
+    }
+  ]
+}
