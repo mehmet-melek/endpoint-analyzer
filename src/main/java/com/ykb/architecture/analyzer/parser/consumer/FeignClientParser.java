@@ -53,7 +53,7 @@ public class FeignClientParser extends AbstractEndpointParser<ConsumedEndpoint> 
         List<ApiCall> apiCalls = parseApiCalls(classDeclaration, basePath);
 
         return ConsumedEndpoint.builder()
-                .clientApplicationName(clientName)
+                .clientApplicationName(extractApplicationName(clientName))
                 .clientOrganizationName(extractOrganizationName(clientName))
                 .clientProductName(extractProductName(clientName))
                 .apiCalls(apiCalls)
@@ -269,7 +269,7 @@ public class FeignClientParser extends AbstractEndpointParser<ConsumedEndpoint> 
         
         String[] parts = clientName.split("\\.");
         if (parts.length >= 3) {
-            return parts[0];
+            return parts[0];  // Return just the organization name
         }
         
         return null;
@@ -282,10 +282,24 @@ public class FeignClientParser extends AbstractEndpointParser<ConsumedEndpoint> 
         
         String[] parts = clientName.split("\\.");
         if (parts.length >= 3) {
-            return parts[0] + "." + parts[1];
+            return parts[1];  // Return just the product name
         }
         
         return null;
+    }
+
+    // Yeni bir metod ekleyelim - clientApplicationName için
+    private String extractApplicationName(String clientName) {
+        if (clientName.startsWith("http") || clientName.startsWith("${") || !clientName.contains(".")) {
+            return clientName;  // URL veya parametrik değer ise aynen döndür
+        }
+        
+        String[] parts = clientName.split("\\.");
+        if (parts.length >= 3) {
+            return parts[2];  // Return just the application name
+        }
+        
+        return clientName;  // Eğer format uygun değilse tam ismi döndür
     }
 
     @Override
