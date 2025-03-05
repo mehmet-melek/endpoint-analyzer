@@ -65,18 +65,27 @@ public class FeignClientParser extends AbstractEndpointParser<ConsumedEndpoint> 
      * Follows priority: name -> value -> url -> class name -> unknown
      */
     private String getClientName(ClassOrInterfaceDeclaration classDeclaration) {
-        // First try to get 'name' or 'value' attribute
-        Optional<String> appName = AnnotationParser.getAnnotationValue(classDeclaration, FEIGN_CLIENT, "name")
-                .or(() -> AnnotationParser.getAnnotationValue(classDeclaration, FEIGN_CLIENT, "value"));
-        
-        if (appName.isPresent()) {
-            String name = appName.get();
-            // Check if it's a parametric value
-            return configReader.resolveParametricValue(name)
-                    .orElse(name); // Use original value if not found in config
+        // First try to get 'name' attribute
+        Optional<String> nameAttr = AnnotationParser.getAnnotationValue(classDeclaration, FEIGN_CLIENT, "name");
+        if (nameAttr.isPresent()) {
+            String name = nameAttr.get();
+            Optional<String> resolvedName = configReader.resolveParametricValue(name);
+            if (resolvedName.isPresent()) {
+                return resolvedName.get();
+            }
         }
 
-        // If no name/value, try to get 'url' attribute
+        // Then try 'value' attribute
+        Optional<String> valueAttr = AnnotationParser.getAnnotationValue(classDeclaration, FEIGN_CLIENT, "value");
+        if (valueAttr.isPresent()) {
+            String value = valueAttr.get();
+            Optional<String> resolvedValue = configReader.resolveParametricValue(value);
+            if (resolvedValue.isPresent()) {
+                return resolvedValue.get();
+            }
+        }
+
+        // If no name/value with parameters, try to get 'url' attribute
         Optional<String> url = AnnotationParser.getAnnotationValue(classDeclaration, FEIGN_CLIENT, "url");
         if (url.isPresent()) {
             return url.get();
@@ -86,8 +95,11 @@ public class FeignClientParser extends AbstractEndpointParser<ConsumedEndpoint> 
         Optional<String> singleValue = AnnotationParser.getAnnotationSingleValue(classDeclaration, FEIGN_CLIENT);
         if (singleValue.isPresent()) {
             String value = singleValue.get();
-            return configReader.resolveParametricValue(value)
-                    .orElse(value);
+            Optional<String> resolvedValue = configReader.resolveParametricValue(value);
+            if (resolvedValue.isPresent()) {
+                return resolvedValue.get();
+            }
+            return value;
         }
 
         log.warn("No name, value, url or direct value found for FeignClient: {}", classDeclaration.getNameAsString());

@@ -26,31 +26,56 @@ public class ConfigReader {
         this.config = loadedConfig;
     }
 
-    public Optional<String> resolveParametricValue(String value) {
-        if (!isParametric(value)) {
+    public Optional<String> resolveParametricValue(String parameterValue) {
+        if (parameterValue == null || !parameterValue.startsWith("${") || !parameterValue.endsWith("}")) {
             return Optional.empty();
         }
 
-        // Extract parameter name from ${...}
-        String paramName = value.substring(2, value.length() - 1); // Remove ${ and }
-        String[] parts = paramName.split("\\.");
-
-        // Navigate through nested maps
-        Map<String, Object> current = config;
-        for (int i = 0; i < parts.length - 1; i++) {
-            Object next = current.get(parts[i].toLowerCase());
-            if (!(next instanceof Map)) {
+        // Extract parameter name without ${...}
+        String paramName = parameterValue.substring(2, parameterValue.length() - 1);
+        
+        // Split the parameter path (e.g., "endpoint.postOffice" -> ["endpoint", "postOffice"])
+        String[] pathParts = paramName.split("\\.");
+        
+        Map<String, Object> currentMap = config;
+        for (int i = 0; i < pathParts.length - 1; i++) {
+            String part = pathParts[i];
+            // Case-insensitive key search in the current map level
+            String matchingKey = findKeyIgnoreCase(currentMap, part);
+            if (matchingKey == null) {
+                log.warn("Could not find configuration for path part: {}", part);
                 return Optional.empty();
             }
-            current = (Map<String, Object>) next;
+            
+            Object value = currentMap.get(matchingKey);
+            if (!(value instanceof Map)) {
+                log.warn("Configuration path part is not a map: {}", part);
+                return Optional.empty();
+            }
+            currentMap = (Map<String, Object>) value;
         }
 
-        // Get final value
-        Object result = current.get(parts[parts.length - 1].toLowerCase());
-        return result != null ? Optional.of(result.toString()) : Optional.empty();
+        // Case-insensitive search for the final key
+        String finalKey = findKeyIgnoreCase(currentMap, pathParts[pathParts.length - 1]);
+        if (finalKey == null) {
+            log.warn("Could not find configuration for key: {}", pathParts[pathParts.length - 1]);
+            return Optional.empty();
+        }
+
+        Object value = currentMap.get(finalKey);
+        return Optional.ofNullable(value).map(Object::toString);
     }
 
-    private boolean isParametric(String value) {
-        return value != null && value.startsWith("${") && value.endsWith("}");
+    /**
+     * Finds a key in the map ignoring case
+     * @param map The map to search in
+     * @param searchKey The key to search for
+     * @return The actual key from the map, or null if not found
+     */
+    private String findKeyIgnoreCase(Map<String, Object> map, String searchKey) {
+        return map.keySet().stream()
+                .filter(key -> key.equalsIgnoreCase(searchKey))
+                .findFirst()
+                .orElse(null);
     }
 } 
